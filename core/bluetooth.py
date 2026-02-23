@@ -16,9 +16,16 @@ def verify_device_state(ssh, cfg):
 
     try:
         _, _, code = ssh.exec(
-            f"systemctl is-enabled {service_installer.SERVICE_NAME}", timeout=TIMEOUT
+            f"systemctl is-active {service_installer.SERVICE_NAME}", timeout=TIMEOUT
         )
-        state["service_installed"] = code == 0
+        if code == 0:
+            state["service_installed"] = True
+        else:
+            # Service may not be running yet (boot timing) but files exist
+            _, _, code = ssh.exec(
+                f"test -f {service_installer.SERVICE_PERSISTENT_PATH}", timeout=TIMEOUT
+            )
+            state["service_installed"] = code == 0
     except Exception:
         pass
 
