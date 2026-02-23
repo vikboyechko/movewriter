@@ -23,16 +23,20 @@ def install(ssh):
     # Create script directory on persistent storage
     ssh.exec(f"mkdir -p {SCRIPT_DIR}")
 
-    # Upload the setup+monitor script
+    # Upload the setup+monitor script (normalize line endings for Linux)
     local_script = os.path.join(_resources_dir(), SCRIPT_NAME)
-    ssh.upload(local_script, SCRIPT_REMOTE_PATH)
+    with open(local_script, "r") as f:
+        script_content = f.read().replace("\r\n", "\n")
+    ssh.upload_string(script_content, SCRIPT_REMOTE_PATH)
     ssh.exec(f"chmod +x {SCRIPT_REMOTE_PATH}")
 
-    # Install service file to persistent root filesystem
+    # Install service file to persistent root filesystem (normalize line endings)
     local_service = os.path.join(_resources_dir(), SERVICE_NAME)
+    with open(local_service, "r") as f:
+        service_content = f.read().replace("\r\n", "\n")
     ssh.exec("mount -o remount,rw /")
     try:
-        ssh.upload(local_service, SERVICE_PERSISTENT_PATH)
+        ssh.upload_string(service_content, SERVICE_PERSISTENT_PATH)
         # Create enable symlink on persistent root fs too
         ssh.exec(f"mkdir -p {ENABLE_SYMLINK_DIR}")
         ssh.exec(f"ln -sf {SERVICE_PERSISTENT_PATH} {ENABLE_SYMLINK_PATH}")
