@@ -66,7 +66,10 @@ def verify_device_state(ssh, cfg):
 
 
 def scan_devices(ssh, timeout=15):
-    ssh.exec(f"bluetoothctl --timeout {timeout} scan on", timeout=timeout + 5)
+    try:
+        ssh.exec(f"bluetoothctl --timeout {timeout} scan on", timeout=timeout + 5)
+    except TimeoutError:
+        pass  # scan populated the device cache; timeout means it ran the full duration
     out, _, _ = ssh.exec("bluetoothctl devices")
     devices = []
     for line in out.strip().splitlines():
