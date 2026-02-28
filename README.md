@@ -65,8 +65,11 @@ The service and script are installed to persistent storage on the Move, so they 
 
 ## Limitations
 
-- PIN-based keyboards don't work — non-interactive pairing can't handle PIN entry
 - After rebooting the Move, you may need to power-cycle the keyboard to wake it up for reconnection
+
+## PIN-Based keyboards
+
+Some Bluetooth keyboards require a PIN code to pair. MoveWriter supports this for both BT Classic and BLE keyboards. When you select a keyboard that requires a PIN, MoveWriter will prompt you to enter the code. The app will then handle the pairing process using the provided PIN.
 
 ## License
 
