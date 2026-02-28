@@ -95,6 +95,23 @@ class SSHClient:
             finally:
                 sftp.close()
 
+    def open_channel(self):
+        """Open a Paramiko channel with a PTY for interactive sessions.
+
+        Does NOT acquire self._lock — transport is thread-safe for opening
+        channels. Caller is responsible for closing the channel.
+        """
+        client = self._client
+        if client is None:
+            raise RuntimeError("Not connected")
+        transport = client.get_transport()
+        if transport is None or not transport.is_active():
+            raise RuntimeError("Not connected")
+        channel = transport.open_session()
+        channel.get_pty(term="dumb", width=200, height=50)
+        channel.invoke_shell()
+        return channel
+
     def run_in_background(self, cmd, callback, timeout=60):
         def worker():
             try:

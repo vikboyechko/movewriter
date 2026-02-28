@@ -29,6 +29,74 @@ STATUS_COLORS = {
 PADDING_X = 24
 
 
+class PasskeyDialog(tk.Toplevel):
+    """Modal dialog that displays a Bluetooth passkey for the user to type."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Bluetooth Passkey")
+        self.configure(bg=styles.BG)
+        self.resizable(False, False)
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+
+        # Center on parent
+        self.geometry("360x200")
+        self.update_idletasks()
+        px = parent.winfo_toplevel().winfo_rootx()
+        py = parent.winfo_toplevel().winfo_rooty()
+        pw = parent.winfo_toplevel().winfo_width()
+        ph = parent.winfo_toplevel().winfo_height()
+        x = px + (pw - 360) // 2
+        y = py + (ph - 200) // 2
+        self.geometry(f"+{x}+{y}")
+
+        self.label = tk.Label(
+            self, text="Passkey required",
+            font=styles.FONT_HEADING, bg=styles.BG, fg=styles.FG,
+        )
+        self.label.pack(pady=(24, 8))
+
+        self.passkey_label = tk.Label(
+            self, text="------",
+            font=("Menlo", 36, "bold"), bg=styles.BG, fg=styles.ACCENT,
+        )
+        self.passkey_label.pack(pady=(4, 8))
+
+        self.instruction = tk.Label(
+            self, text="Type this code on your keyboard, then press Enter.",
+            font=styles.FONT_BODY, bg=styles.BG, fg=styles.FG_DIM,
+            wraplength=300,
+        )
+        self.instruction.pack(pady=(0, 16))
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def show_passkey(self, passkey):
+        self.passkey_label.configure(text=passkey)
+
+    def close_with_success(self):
+        try:
+            self.grab_release()
+            self.destroy()
+        except Exception:
+            pass
+
+    def close_with_error(self, msg):
+        try:
+            self.grab_release()
+            self.destroy()
+        except Exception:
+            pass
+
+    def _on_close(self):
+        try:
+            self.grab_release()
+            self.destroy()
+        except Exception:
+            pass
+
+
 class MainScreen(ttk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent)
@@ -38,6 +106,7 @@ class MainScreen(ttk.Frame):
         self.sections = {}
         self.device_list = []
         self._monitor_active = False
+        self._passkey_dialog = None
 
         self._build_ui()
         self._restore_state()
@@ -519,17 +588,36 @@ class MainScreen(ttk.Frame):
         self._set_section_status("keyboard", STATUS_RUNNING)
         self.pair_status_var.set(f"Pairing with {device['name']}...")
 
+        def on_passkey(passkey):
+            self.after(0, self._show_passkey_dialog, passkey)
+
         def worker():
             try:
                 old_mac = getattr(self, '_old_keyboard_mac', None)
-                bluetooth.pair_and_connect(self.app.ssh, device["mac"], old_mac=old_mac)
+                bluetooth.pair_and_connect(
+                    self.app.ssh, device["mac"],
+                    old_mac=old_mac, passkey_callback=on_passkey,
+                )
                 self.after(0, self._pair_done, device)
             except Exception as e:
                 self.after(0, self._pair_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _show_passkey_dialog(self, passkey):
+        if self._passkey_dialog is not None:
+            try:
+                self._passkey_dialog.show_passkey(passkey)
+                return
+            except Exception:
+                self._passkey_dialog = None
+        self._passkey_dialog = PasskeyDialog(self)
+        self._passkey_dialog.show_passkey(passkey)
+
     def _pair_done(self, device):
+        if self._passkey_dialog is not None:
+            self._passkey_dialog.close_with_success()
+            self._passkey_dialog = None
         self._set_section_status("keyboard", STATUS_DONE)
         self.app.cfg["keyboard_mac"] = device["mac"]
         self.app.cfg["keyboard_name"] = device["name"]
@@ -544,6 +632,9 @@ class MainScreen(ttk.Frame):
         self.kb_status_var.set("Connected")
 
     def _pair_error(self, msg):
+        if self._passkey_dialog is not None:
+            self._passkey_dialog.close_with_error(msg)
+            self._passkey_dialog = None
         self._set_section_status("keyboard", STATUS_ERROR)
         self.pair_btn.configure(state="normal")
         self.pair_status_var.set(f"Pair error: {msg[:100]}")

@@ -39,9 +39,16 @@ echo user.lock >> /sys/power/wake_lock
 
 try_connect() {
     MAC="$1"
-    # Trust first so BlueZ auto-accepts, then pair, then connect
+    # Trust first so BlueZ auto-accepts
     bluetoothctl trust "$MAC" 2>/dev/null
-    bluetoothctl pair "$MAC" 2>/dev/null
+    # Use interactive bluetoothctl with NoInputNoOutput agent to auto-accept
+    # pairing without passkey display (acceptable at boot — user already paired)
+    bluetoothctl <<EOF
+agent NoInputNoOutput
+default-agent
+pair $MAC
+EOF
+    sleep 2
     bluetoothctl connect "$MAC" 2>/dev/null
 }
 
