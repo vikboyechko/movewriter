@@ -598,6 +598,7 @@ class MainScreen(ttk.Frame):
                     self.app.ssh, device["mac"],
                     old_mac=old_mac, passkey_callback=on_passkey,
                 )
+                save_keyboard_mac(self.app.ssh, device["mac"])
                 self.after(0, self._pair_done, device)
             except Exception as e:
                 self.after(0, self._pair_error, str(e))
@@ -622,12 +623,6 @@ class MainScreen(ttk.Frame):
         self.app.cfg["keyboard_mac"] = device["mac"]
         self.app.cfg["keyboard_name"] = device["name"]
         config.save(self.app.cfg)
-        def save_mac():
-            try:
-                save_keyboard_mac(self.app.ssh, device["mac"])
-            except Exception:
-                pass
-        threading.Thread(target=save_mac, daemon=True).start()
         self._show_saved_view()
         self.kb_status_var.set("Connected")
 
