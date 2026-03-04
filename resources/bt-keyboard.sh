@@ -22,6 +22,10 @@ echo 'UserspaceHID=true' >> /etc/bluetooth/input.conf
 sed -i '/^[# ]*ClassicBondedOnly/d' /etc/bluetooth/input.conf
 echo 'ClassicBondedOnly=false' >> /etc/bluetooth/input.conf
 
+# Remove Privacy setting if present — causes BLE connections to fail
+# with le-connection-abort-by-local on the NXP controller
+sed -i '/^[# ]*Privacy/d' /etc/bluetooth/main.conf 2>/dev/null
+
 # Restart bluetooth so input.conf changes take effect
 systemctl restart bluetooth
 sleep 2
@@ -41,15 +45,26 @@ try_connect() {
     MAC="$1"
     # Trust first so BlueZ auto-accepts
     bluetoothctl trust "$MAC" 2>/dev/null
-    # Use interactive bluetoothctl with NoInputNoOutput agent to auto-accept
-    # pairing without passkey display (acceptable at boot — user already paired)
+
+    # BLE keyboards require a scan before connect — without it, bluez doesn't
+    # know the device is nearby and connect fails silently
+    (echo "scan on"; sleep 5; echo "scan off") | bluetoothctl >/dev/null 2>&1
+    sleep 1
+
+    # Re-pair with NoInputNoOutput agent (pairing data is volatile on the Move)
     bluetoothctl <<EOF
 agent NoInputNoOutput
 default-agent
 pair $MAC
 EOF
     sleep 2
-    bluetoothctl connect "$MAC" 2>/dev/null
+
+    # Connect with timeout — BLE connect can hang indefinitely
+    bluetoothctl connect "$MAC" >/dev/null 2>&1 &
+    CPID=$!
+    sleep 5
+    kill $CPID 2>/dev/null
+    wait $CPID 2>/dev/null
 }
 
 is_connected() {
