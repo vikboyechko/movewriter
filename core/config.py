@@ -14,6 +14,7 @@ DEFAULTS = {
     "service_installed": False,
     "keyboard_mac": "",
     "keyboard_name": "",
+    "keyboard_layout": "US English",
 }
 
 

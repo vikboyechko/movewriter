@@ -1,5 +1,7 @@
 import os
 
+from core import layout_patcher
+
 SERVICE_NAME = "remarkable-bt-keyboard.service"
 SCRIPT_NAME = "bt-keyboard.sh"
 
@@ -54,6 +56,9 @@ def install(ssh):
 
 
 def uninstall(ssh):
+    # Restore original libepaper.so if it was patched
+    layout_patcher.restore_original(ssh)
+
     # Stop and disable
     ssh.exec(f"systemctl stop {SERVICE_NAME}", timeout=10)
     ssh.exec(f"systemctl disable {SERVICE_NAME}", timeout=5)
@@ -69,7 +74,7 @@ def uninstall(ssh):
     # Remove volatile copy too (if any)
     ssh.exec(f"rm -f {SERVICE_VOLATILE_PATH}", timeout=5)
 
-    # Clean up script and MAC file
+    # Clean up script, MAC file, and movewriter directory
     ssh.exec(f"rm -rf {SCRIPT_DIR}", timeout=5)
     ssh.exec(f"rm -f {KEYBOARD_MAC_PATH}", timeout=5)
 

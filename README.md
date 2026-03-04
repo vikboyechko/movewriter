@@ -63,6 +63,12 @@ MoveWriter communicates with your Move over SSH (via the USB network interface a
 
 The service and script are installed to persistent storage on the Move, so they survive reboots and firmware updates to the `/etc` overlay.
 
+## Keyboard Language
+
+MoveWriter supports 23 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move immediately. The setting persists across reboots.
+
+Supported languages: US English, UK English, German, French, Spanish, Italian, Portuguese, Brazilian, Dutch, Swedish, Norwegian, Danish, Finnish, Swiss German, Swiss French, Belgian, Russian, Ukrainian, Czech, Hungarian, Turkish, Greek, Hebrew.
+
 ## Limitations
 
 - After rebooting the Move, you may need to power-cycle the keyboard to wake it up for reconnection

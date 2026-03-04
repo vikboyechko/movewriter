@@ -84,6 +84,17 @@ class SSHClient:
             finally:
                 sftp.close()
 
+    def download_bytes(self, remote_path):
+        with self._lock:
+            if self._client is None:
+                raise RuntimeError("Not connected")
+            sftp = self._client.open_sftp()
+            try:
+                with sftp.file(remote_path, "rb") as f:
+                    return f.read()
+            finally:
+                sftp.close()
+
     def upload_bytes(self, data, remote_path):
         with self._lock:
             if self._client is None:

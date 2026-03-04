@@ -4,7 +4,7 @@ from tkinter import ttk
 import threading
 
 from ui import styles
-from core import config, bluetooth, service_installer
+from core import config, bluetooth, service_installer, layout_patcher
 from core.service_installer import save_keyboard_mac
 
 STATUS_PENDING = "pending"
@@ -27,6 +27,35 @@ STATUS_COLORS = {
 }
 
 PADDING_X = 24
+
+KEYBOARD_LAYOUTS = [
+    ("US English", "us"),
+    ("UK English", "uk"),
+    ("German", "de"),
+    ("French", "fr"),
+    ("Spanish", "es"),
+    ("Italian", "it"),
+    ("Portuguese", "pt"),
+    ("Brazilian", "br"),
+    ("Dutch", "nl"),
+    ("Swedish", "sv"),
+    ("Norwegian", "no"),
+    ("Danish", "dk"),
+    ("Finnish", "fi"),
+    ("Swiss German", "de_ch"),
+    ("Swiss French", "fr_ch"),
+    ("Belgian", "be"),
+    ("Russian", "ru"),
+    ("Ukrainian", "ua"),
+    ("Czech", "cz"),
+    ("Hungarian", "hu"),
+    ("Turkish", "tr"),
+    ("Greek", "gr"),
+    ("Hebrew", "he"),
+]
+
+LAYOUT_NAMES = [name for name, _ in KEYBOARD_LAYOUTS]
+LAYOUT_MAP = dict(KEYBOARD_LAYOUTS)
 
 
 class PasskeyDialog(tk.Toplevel):
@@ -273,6 +302,7 @@ class MainScreen(ttk.Frame):
         self.install_btn.configure(state="normal")
         self.scan_btn.configure(state="normal")
         self.reconnect_btn.configure(state="normal")
+        self.layout_combo.configure(state="readonly")
         self._verify_device_state()
         self._start_connection_monitor()
 
@@ -318,6 +348,7 @@ class MainScreen(ttk.Frame):
         self.install_btn.configure(state="disabled")
         self.scan_btn.configure(state="disabled")
         self.reconnect_btn.configure(state="disabled")
+        self.layout_combo.configure(state="disabled")
 
     # ── Section 2: Bluetooth Service ──────────────────────────
 
@@ -427,6 +458,25 @@ class MainScreen(ttk.Frame):
             self.kb_saved_frame, textvariable=self.kb_status_var,
             style="CardStatus.TLabel",
         ).pack(anchor="w", pady=(2, 8))
+
+        # Layout dropdown
+        layout_row = ttk.Frame(self.kb_saved_frame, style="Card.TFrame")
+        layout_row.pack(fill="x", pady=(0, 8))
+        ttk.Label(layout_row, text="Language", style="Card.TLabel").pack(side="left")
+        self.layout_var = tk.StringVar()
+        self.layout_combo = ttk.Combobox(
+            layout_row, textvariable=self.layout_var,
+            values=LAYOUT_NAMES, state="readonly", width=20,
+        )
+        self.layout_combo.pack(side="left", padx=(8, 0))
+        self.layout_combo.set(self.app.cfg.get("keyboard_layout", "US English"))
+        self.layout_combo.bind("<<ComboboxSelected>>", self._on_layout_changed)
+
+        self.layout_status_var = tk.StringVar()
+        ttk.Label(
+            layout_row, textvariable=self.layout_status_var,
+            style="CardStatus.TLabel",
+        ).pack(side="left", padx=(8, 0))
 
         saved_btn_row = ttk.Frame(self.kb_saved_frame, style="Card.TFrame")
         saved_btn_row.pack(fill="x")
@@ -698,6 +748,45 @@ class MainScreen(ttk.Frame):
         self.unpair_btn.configure(state="normal")
         self.kb_status_var.set(f"Unpair failed: {msg[:80]}")
 
+    # ── Keyboard layout ──────────────────────────────────────
+
+    def _on_layout_changed(self, event=None):
+        display_name = self.layout_var.get()
+        layout_key = LAYOUT_MAP.get(display_name, "us")
+
+        # Save to local config immediately
+        self.app.cfg["keyboard_layout"] = display_name
+        config.save(self.app.cfg)
+
+        if not self.app.ssh.is_connected:
+            self.layout_status_var.set("Saved (apply on next connect)")
+            return
+
+        self.layout_combo.configure(state="disabled")
+        self.layout_status_var.set("Applying...")
+
+        def on_status(msg):
+            self.after(0, self.layout_status_var.set, msg)
+
+        def worker():
+            try:
+                layout_patcher.apply_layout(
+                    self.app.ssh, layout_key, status_cb=on_status,
+                )
+                self.after(0, self._layout_applied)
+            except Exception as e:
+                self.after(0, self._layout_error, str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _layout_applied(self):
+        self.layout_combo.configure(state="readonly")
+        self.layout_status_var.set("Applied")
+
+    def _layout_error(self, msg):
+        self.layout_combo.configure(state="readonly")
+        self.layout_status_var.set(f"Error: {msg[:60]}")
+
     # ── State restoration ─────────────────────────────────────
 
     def _restore_state(self):
@@ -713,8 +802,36 @@ class MainScreen(ttk.Frame):
                 self.after(0, self._apply_verified_state, state)
             except Exception:
                 pass
+            # Sync keyboard layout if needed
+            self._sync_layout_if_needed()
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _sync_layout_if_needed(self):
+        """Apply saved layout to device if it doesn't match."""
+        display_name = self.app.cfg.get("keyboard_layout", "US English")
+        layout_key = LAYOUT_MAP.get(display_name, "us")
+
+        # Check what layout the device currently has
+        try:
+            out, _, code = self.app.ssh.exec(
+                f"cat {layout_patcher.LAYOUT_FILE} 2>/dev/null", timeout=5,
+            )
+            device_layout = out.strip() if code == 0 else "us"
+        except Exception:
+            device_layout = "us"
+
+        if device_layout == layout_key:
+            return  # Already in sync
+
+        # Apply the saved layout
+        self.after(0, self.layout_combo.configure, {"state": "disabled"})
+        self.after(0, self.layout_status_var.set, "Syncing layout...")
+        try:
+            layout_patcher.apply_layout(self.app.ssh, layout_key)
+            self.after(0, self._layout_applied)
+        except Exception as e:
+            self.after(0, self._layout_error, str(e))
 
     def _apply_verified_state(self, state):
         cfg = self.app.cfg
