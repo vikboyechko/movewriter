@@ -24,15 +24,25 @@ class SSHClient:
             self.disconnect_unlocked()
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            client.connect(
-                hostname=ip,
-                port=port,
-                username="root",
-                password=password,
-                timeout=timeout,
-                look_for_keys=False,
-                allow_agent=False,
-            )
+            if password:
+                client.connect(
+                    hostname=ip,
+                    port=port,
+                    username="root",
+                    password=password,
+                    timeout=timeout,
+                    look_for_keys=False,
+                    allow_agent=False,
+                )
+            else:
+                client.connect(
+                    hostname=ip,
+                    port=port,
+                    username="root",
+                    timeout=timeout,
+                    look_for_keys=True,
+                    allow_agent=True,
+                )
             self._client = client
 
     def disconnect(self):

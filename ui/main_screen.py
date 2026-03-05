@@ -275,8 +275,8 @@ class MainScreen(ttk.Frame):
     def _on_connect(self):
         ip = self.ip_var.get().strip()
         pw = self.pw_var.get().strip()
-        if not ip or not pw:
-            self._set_conn_status("Enter IP and password", "Error.TLabel")
+        if not ip:
+            self._set_conn_status("Enter IP address", "Error.TLabel")
             return
 
         self.connect_btn.configure(state="disabled")
