@@ -50,9 +50,9 @@ def install(ssh):
 
     # Reload and start
     ssh.exec("systemctl daemon-reload")
-    out, err, code = ssh.exec(f"systemctl enable --now {SERVICE_NAME}", timeout=30)
+    out, err, code = ssh.exec(f"systemctl start {SERVICE_NAME}", timeout=30)
     if code != 0:
-        raise RuntimeError(f"Failed to enable service: {err or out}")
+        raise RuntimeError(f"Failed to start service: {err or out}")
 
 
 def uninstall(ssh):
