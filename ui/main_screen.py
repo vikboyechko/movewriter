@@ -1,4 +1,5 @@
 import os
+import queue
 import tkinter as tk
 from tkinter import ttk
 import threading
@@ -136,9 +137,23 @@ class MainScreen(ttk.Frame):
         self.device_list = []
         self._monitor_active = False
         self._passkey_dialog = None
+        self._queue = queue.Queue()
 
         self._build_ui()
         self._restore_state()
+        self._poll_queue()
+
+    def _poll_queue(self):
+        while not self._queue.empty():
+            try:
+                fn, args = self._queue.get_nowait()
+                fn(*args)
+            except queue.Empty:
+                break
+        self.after(50, self._poll_queue)
+
+    def _schedule(self, fn, *args):
+        self._queue.put((fn, args))
 
     # ── Build UI ──────────────────────────────────────────────
 
@@ -285,9 +300,9 @@ class MainScreen(ttk.Frame):
         def worker():
             try:
                 self.app.ssh.connect(ip, pw)
-                self.after(0, self._on_connected, ip, pw)
+                self._schedule(self._on_connected, ip, pw)
             except Exception as e:
-                self.after(0, self._on_connect_error, str(e))
+                self._schedule(self._on_connect_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -328,10 +343,10 @@ class MainScreen(ttk.Frame):
             try:
                 self.app.ssh.exec("true", timeout=3)
                 if self._monitor_active:
-                    self.after(3000, self._check_connection)
+                    self._schedule(lambda: self.after(3000, self._check_connection))
             except Exception:
                 if self._monitor_active:
-                    self.after(0, self._on_disconnected)
+                    self._schedule(self._on_disconnected)
 
         threading.Thread(target=ping, daemon=True).start()
 
@@ -392,18 +407,18 @@ class MainScreen(ttk.Frame):
             def worker():
                 try:
                     service_installer.uninstall(self.app.ssh)
-                    self.after(0, self._service_uninstalled)
+                    self._schedule(self._service_uninstalled)
                 except Exception as e:
-                    self.after(0, self._service_error, str(e))
+                    self._schedule(self._service_error, str(e))
         else:
             self.svc_status_var.set("Installing...")
 
             def worker():
                 try:
                     service_installer.install(self.app.ssh)
-                    self.after(0, self._service_installed)
+                    self._schedule(self._service_installed)
                 except Exception as e:
-                    self.after(0, self._service_error, str(e))
+                    self._schedule(self._service_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -600,9 +615,9 @@ class MainScreen(ttk.Frame):
         def worker():
             try:
                 devices = bluetooth.scan_devices(self.app.ssh, timeout=15)
-                self.after(0, self._scan_done, devices)
+                self._schedule(self._scan_done, devices)
             except Exception as e:
-                self.after(0, self._scan_error, str(e))
+                self._schedule(self._scan_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -639,7 +654,7 @@ class MainScreen(ttk.Frame):
         self.pair_status_var.set(f"Pairing with {device['name']}...")
 
         def on_passkey(passkey):
-            self.after(0, self._show_passkey_dialog, passkey)
+            self._schedule(self._show_passkey_dialog, passkey)
 
         def worker():
             try:
@@ -649,9 +664,9 @@ class MainScreen(ttk.Frame):
                     old_mac=old_mac, passkey_callback=on_passkey,
                 )
                 save_keyboard_mac(self.app.ssh, device["mac"])
-                self.after(0, self._pair_done, device)
+                self._schedule(self._pair_done, device)
             except Exception as e:
-                self.after(0, self._pair_error, str(e))
+                self._schedule(self._pair_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -699,9 +714,9 @@ class MainScreen(ttk.Frame):
         def worker():
             try:
                 bluetooth.connect(self.app.ssh, mac)
-                self.after(0, self._reconnect_done, name)
+                self._schedule(self._reconnect_done, name)
             except Exception as e:
-                self.after(0, self._reconnect_error, str(e))
+                self._schedule(self._reconnect_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -731,9 +746,9 @@ class MainScreen(ttk.Frame):
                 self.app.ssh.exec(
                     f"rm -f {service_installer.KEYBOARD_MAC_PATH}", timeout=5
                 )
-                self.after(0, self._unpair_done)
+                self._schedule(self._unpair_done)
             except Exception as e:
-                self.after(0, self._unpair_error, str(e))
+                self._schedule(self._unpair_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -766,16 +781,16 @@ class MainScreen(ttk.Frame):
         self.layout_status_var.set("Applying...")
 
         def on_status(msg):
-            self.after(0, self.layout_status_var.set, msg)
+            self._schedule(self.layout_status_var.set, msg)
 
         def worker():
             try:
                 layout_patcher.apply_layout(
                     self.app.ssh, layout_key, status_cb=on_status,
                 )
-                self.after(0, self._layout_applied)
+                self._schedule(self._layout_applied)
             except Exception as e:
-                self.after(0, self._layout_error, str(e))
+                self._schedule(self._layout_error, str(e))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -799,7 +814,7 @@ class MainScreen(ttk.Frame):
         def worker():
             try:
                 state = bluetooth.verify_device_state(self.app.ssh, self.app.cfg)
-                self.after(0, self._apply_verified_state, state)
+                self._schedule(self._apply_verified_state, state)
             except Exception:
                 pass
             # Sync keyboard layout if needed
@@ -825,13 +840,13 @@ class MainScreen(ttk.Frame):
             return  # Already in sync
 
         # Apply the saved layout
-        self.after(0, self.layout_combo.configure, {"state": "disabled"})
-        self.after(0, self.layout_status_var.set, "Syncing layout...")
+        self._schedule(self.layout_combo.configure, {"state": "disabled"})
+        self._schedule(self.layout_status_var.set, "Syncing layout...")
         try:
             layout_patcher.apply_layout(self.app.ssh, layout_key)
-            self.after(0, self._layout_applied)
+            self._schedule(self._layout_applied)
         except Exception as e:
-            self.after(0, self._layout_error, str(e))
+            self._schedule(self._layout_error, str(e))
 
     def _apply_verified_state(self, state):
         cfg = self.app.cfg

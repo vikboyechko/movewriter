@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=MoveWriter
+Exec=entrypoint
+Icon=movewriter-icon
+Categories=Utility;
