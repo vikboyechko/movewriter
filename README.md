@@ -91,8 +91,7 @@ Supported languages: US English, UK English, German, French, Spanish, Italian, P
 ```bash
 pip install python-appimage
 python-appimage build app -p 3.10 --name MoveWriter \
-  -x main.py core ui tools resources images \
-  appimage
+  appimage -x main.py core ui tools resources images
 ```
 
 This produces a `MoveWriter-x86_64.AppImage` in the current directory. The `appimage/` directory contains the metadata, icon, and entrypoint.
