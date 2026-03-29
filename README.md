@@ -40,6 +40,23 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Setup (Ubuntu)
+
+```bash
+git clone https://github.com/yourusername/movewriter.git
+cd movewriter
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+You may also need to install the Tkinter system package if it's not already present:
+
+```bash
+sudo apt install python3-tk
+```
+
 ## Usage
 
 1. Connect your Move to your computer via USB
@@ -68,6 +85,21 @@ The service and script are installed to persistent storage on the Move, so they 
 MoveWriter supports 23 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move immediately. The setting persists across reboots.
 
 Supported languages: US English, UK English, German, French, Spanish, Italian, Portuguese, Brazilian, Dutch, Swedish, Norwegian, Danish, Finnish, Swiss German, Swiss French, Belgian, Russian, Ukrainian, Czech, Hungarian, Turkish, Greek, Hebrew.
+
+## Building an AppImage (Ubuntu)
+
+```bash
+sudo apt install python3-tk
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt python-appimage
+python-appimage build app -p 3.10 \
+  --name MoveWriter \
+  --icon images/movewriter-icon.png \
+  .
+```
+
+This produces a `MoveWriter-x86_64.AppImage` in the current directory.
 
 ## Limitations
 
