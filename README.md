@@ -89,17 +89,13 @@ Supported languages: US English, UK English, German, French, Spanish, Italian, P
 ## Building an AppImage (Ubuntu)
 
 ```bash
-sudo apt install python3-tk
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt python-appimage
-python-appimage build app -p 3.10 \
-  --name MoveWriter \
-  --icon images/movewriter-icon.png \
-  .
+pip install python-appimage
+python-appimage build app -p 3.10 --name MoveWriter \
+  -x main.py core ui tools resources images \
+  appimage
 ```
 
-This produces a `MoveWriter-x86_64.AppImage` in the current directory.
+This produces a `MoveWriter-x86_64.AppImage` in the current directory. The `appimage/` directory contains the metadata, icon, and entrypoint.
 
 ## Limitations
 

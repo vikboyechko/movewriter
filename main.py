@@ -8,7 +8,8 @@ def main():
 
     icon_path = os.path.join(os.path.dirname(__file__), "images", "movewriter-icon.png")
     if os.path.exists(icon_path):
-        icon = tk.PhotoImage(file=icon_path)
+        from PIL import Image, ImageTk
+        icon = ImageTk.PhotoImage(Image.open(icon_path))
         root.iconphoto(True, icon)
 
     App(root)
