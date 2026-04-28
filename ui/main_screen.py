@@ -3,8 +3,10 @@ import tkinter as tk
 from tkinter import ttk
 import threading
 
+from tkinter import messagebox
+
 from ui import styles
-from core import config, bluetooth, service_installer, layout_patcher
+from core import config, bluetooth, service_installer, layout_patcher, native_app_installer
 from core.service_installer import save_keyboard_mac
 
 STATUS_PENDING = "pending"
@@ -171,14 +173,7 @@ class MainScreen(ttk.Frame):
         self._build_connection_section()
         self._build_service_section()
         self._build_keyboard_section()
-
-        # Footer message
-        ttk.Label(
-            self,
-            text="After pairing, your keyboard will stay connected even after closing this app.",
-            style="Dim.TLabel",
-            wraplength=400,
-        ).pack(pady=(20, 5))
+        self._build_native_app_section()
 
     # ── Card helper ────────────────────────────────────────────
 
@@ -301,8 +296,8 @@ class MainScreen(ttk.Frame):
         # Enable service and keyboard buttons now that we're connected
         self.install_btn.configure(state="normal")
         self.scan_btn.configure(state="normal")
-        self.reconnect_btn.configure(state="normal")
         self.layout_combo.configure(state="readonly")
+        self.native_btn.configure(state="normal")
         self._verify_device_state()
         self._start_connection_monitor()
 
@@ -347,8 +342,10 @@ class MainScreen(ttk.Frame):
         # Disable service and keyboard buttons until reconnected
         self.install_btn.configure(state="disabled")
         self.scan_btn.configure(state="disabled")
-        self.reconnect_btn.configure(state="disabled")
         self.layout_combo.configure(state="disabled")
+        self.native_btn.configure(state="disabled")
+        self._set_section_status("native_app", STATUS_PENDING)
+        self.native_status_var.set("")
 
     # ── Section 2: Bluetooth Service ──────────────────────────
 
@@ -357,7 +354,7 @@ class MainScreen(ttk.Frame):
 
         ttk.Label(
             body,
-            text="Uploads the keyboard service and configures Bluetooth on your Move.",
+            text="Enables your Move to remember and reconnect to a Bluetooth keyboard.",
             style="CardStatus.TLabel",
             wraplength=400,
         ).pack(anchor="w", pady=(0, 8))
@@ -366,7 +363,7 @@ class MainScreen(ttk.Frame):
         btn_row.pack(fill="x")
 
         self.install_btn = ttk.Button(
-            btn_row, text="Install", style="Accent.TButton", command=self._run_service_toggle,
+            btn_row, text="Enable", style="Accent.TButton", command=self._run_service_toggle,
             state="disabled",
         )
         self.install_btn.pack(side="left")
@@ -382,21 +379,34 @@ class MainScreen(ttk.Frame):
             return
 
         is_installed = self.app.cfg.get("service_installed", False)
+        native_installed = self.app.cfg.get("native_app_installed", False)
+
+        if is_installed and native_installed:
+            if not messagebox.askyesno(
+                "Disable Bluetooth Service",
+                "The Native App on your Move depends on the Bluetooth Service. "
+                "Disabling will also remove the Native App.\n\nContinue?",
+            ):
+                return
+
         self._set_section_status("service", STATUS_RUNNING)
         self.install_btn.configure(state="disabled")
         self._monitor_active = False
 
         if is_installed:
-            self.svc_status_var.set("Uninstalling...")
+            cascade = native_installed
+            self.svc_status_var.set("Disabling...")
 
             def worker():
                 try:
+                    if cascade:
+                        native_app_installer.uninstall(self.app.ssh)
                     service_installer.uninstall(self.app.ssh)
-                    self.after(0, self._service_uninstalled)
+                    self.after(0, self._service_uninstalled, cascade)
                 except Exception as e:
                     self.after(0, self._service_error, str(e))
         else:
-            self.svc_status_var.set("Installing...")
+            self.svc_status_var.set("Enabling...")
 
             def worker():
                 try:
@@ -409,8 +419,8 @@ class MainScreen(ttk.Frame):
 
     def _service_installed(self):
         self._set_section_status("service", STATUS_DONE)
-        self.svc_status_var.set("Installed")
-        self.install_btn.configure(state="normal", text="Uninstall")
+        self.svc_status_var.set("Enabled")
+        self.install_btn.configure(state="normal", text="Disable")
         self.app.cfg["service_installed"] = True
         config.save(self.app.cfg)
         mac = self.app.cfg.get("keyboard_mac")
@@ -423,14 +433,21 @@ class MainScreen(ttk.Frame):
             threading.Thread(target=save_mac, daemon=True).start()
         self._start_connection_monitor()
 
-    def _service_uninstalled(self):
+    def _service_uninstalled(self, cascaded=False):
         self._set_section_status("service", STATUS_PENDING)
         self.svc_status_var.set("")
-        self.install_btn.configure(state="normal", text="Install")
+        self.install_btn.configure(state="normal", text="Enable")
         self.app.cfg["service_installed"] = False
         self.app.cfg["setup_complete"] = False
+        if cascaded:
+            self.app.cfg["native_app_installed"] = False
+            self._set_section_status("native_app", STATUS_PENDING)
+            self.native_status_var.set("")
+            self.native_btn.configure(text="Install on Move")
         config.save(self.app.cfg)
-        self._start_connection_monitor()
+        # If we cascaded, xochitl is restarting — wait longer before resuming
+        delay = 8000 if cascaded else 0
+        self.after(delay, self._start_connection_monitor)
 
     def _service_error(self, msg):
         self._set_section_status("service", STATUS_ERROR)
@@ -443,6 +460,13 @@ class MainScreen(ttk.Frame):
     def _build_keyboard_section(self):
         body = self._make_section("keyboard", "Keyboard")
         self.kb_body = body
+
+        ttk.Label(
+            body,
+            text="After pairing, your keyboard will stay connected even after closing this app.",
+            style="CardStatus.TLabel",
+            wraplength=400,
+        ).pack(anchor="w", pady=(0, 10))
 
         # ── Saved keyboard view ──
         self.kb_saved_frame = ttk.Frame(body, style="Card.TFrame")
@@ -478,20 +502,21 @@ class MainScreen(ttk.Frame):
             style="CardStatus.TLabel",
         ).pack(side="left", padx=(8, 0))
 
+        ttk.Label(
+            self.kb_saved_frame,
+            text="Changing language will reboot your Move to take effect.",
+            style="CardStatus.TLabel",
+            wraplength=400,
+        ).pack(anchor="w", pady=(0, 10))
+
         saved_btn_row = ttk.Frame(self.kb_saved_frame, style="Card.TFrame")
         saved_btn_row.pack(fill="x")
-
-        self.reconnect_btn = ttk.Button(
-            saved_btn_row, text="Reconnect", style="Blue.TButton",
-            command=self._run_reconnect, state="disabled",
-        )
-        self.reconnect_btn.pack(side="left")
 
         self.forget_btn = ttk.Button(
             saved_btn_row, text="Change Keyboard",
             command=self._show_scan_view,
         )
-        self.forget_btn.pack(side="left", padx=(8, 0))
+        self.forget_btn.pack(side="left")
 
         self.unpair_btn = ttk.Button(
             saved_btn_row, text="Unpair",
@@ -684,37 +709,6 @@ class MainScreen(ttk.Frame):
         self.pair_btn.configure(state="normal")
         self.pair_status_var.set(f"Pair error: {msg[:100]}")
 
-    def _run_reconnect(self):
-        mac = self.app.cfg.get("keyboard_mac")
-        name = self.app.cfg.get("keyboard_name", "keyboard")
-        if not mac:
-            return
-        if not self.app.ssh.is_connected:
-            self.kb_status_var.set("Connect to device first.")
-            return
-        self.reconnect_btn.configure(state="disabled")
-        self._set_section_status("keyboard", STATUS_RUNNING)
-        self.kb_status_var.set("Reconnecting...")
-
-        def worker():
-            try:
-                bluetooth.connect(self.app.ssh, mac)
-                self.after(0, self._reconnect_done, name)
-            except Exception as e:
-                self.after(0, self._reconnect_error, str(e))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _reconnect_done(self, name):
-        self._set_section_status("keyboard", STATUS_DONE)
-        self.reconnect_btn.configure(state="normal")
-        self.kb_status_var.set("Connected")
-
-    def _reconnect_error(self, msg):
-        self._set_section_status("keyboard", STATUS_ERROR)
-        self.reconnect_btn.configure(state="normal")
-        self.kb_status_var.set(f"Reconnect failed: {msg[:80]}")
-
     def _run_unpair(self):
         mac = self.app.cfg.get("keyboard_mac")
         if not mac:
@@ -799,6 +793,9 @@ class MainScreen(ttk.Frame):
         def worker():
             try:
                 state = bluetooth.verify_device_state(self.app.ssh, self.app.cfg)
+                state["native_app_installed"] = native_app_installer.is_installed(
+                    self.app.ssh
+                )
                 self.after(0, self._apply_verified_state, state)
             except Exception:
                 pass
@@ -808,30 +805,29 @@ class MainScreen(ttk.Frame):
         threading.Thread(target=worker, daemon=True).start()
 
     def _sync_layout_if_needed(self):
-        """Apply saved layout to device if it doesn't match."""
-        display_name = self.app.cfg.get("keyboard_layout", "US English")
-        layout_key = LAYOUT_MAP.get(display_name, "us")
+        """Sync layout display to whatever the Move currently has.
 
-        # Check what layout the device currently has
+        The Move is the source of truth: if the user changed language via
+        the native app, we reflect that here instead of overwriting it.
+        """
         try:
             out, _, code = self.app.ssh.exec(
                 f"cat {layout_patcher.LAYOUT_FILE} 2>/dev/null", timeout=5,
             )
             device_layout = out.strip() if code == 0 else "us"
         except Exception:
-            device_layout = "us"
+            return
 
-        if device_layout == layout_key:
-            return  # Already in sync
+        # Map layout key back to display name
+        display_name = next(
+            (name for name, key in KEYBOARD_LAYOUTS if key == device_layout),
+            "US English",
+        )
 
-        # Apply the saved layout
-        self.after(0, self.layout_combo.configure, {"state": "disabled"})
-        self.after(0, self.layout_status_var.set, "Syncing layout...")
-        try:
-            layout_patcher.apply_layout(self.app.ssh, layout_key)
-            self.after(0, self._layout_applied)
-        except Exception as e:
-            self.after(0, self._layout_error, str(e))
+        if display_name != self.app.cfg.get("keyboard_layout"):
+            self.app.cfg["keyboard_layout"] = display_name
+            config.save(self.app.cfg)
+        self.after(0, self.layout_combo.set, display_name)
 
     def _apply_verified_state(self, state):
         cfg = self.app.cfg
@@ -839,17 +835,38 @@ class MainScreen(ttk.Frame):
 
         if state["service_installed"]:
             self._set_section_status("service", STATUS_DONE)
-            self.svc_status_var.set("Installed")
-            self.install_btn.configure(text="Uninstall")
+            self.svc_status_var.set("Enabled")
+            self.install_btn.configure(text="Disable")
+            if not cfg.get("service_installed"):
+                cfg["service_installed"] = True
+                changed = True
         elif cfg.get("service_installed"):
             self._set_section_status("service", STATUS_ERROR)
-            self.svc_status_var.set("Bluetooth Service was removed")
-            self.install_btn.configure(text="Install")
+            self.svc_status_var.set("Bluetooth Service was disabled")
+            self.install_btn.configure(text="Enable")
             cfg["service_installed"] = False
             changed = True
         else:
             self._set_section_status("service", STATUS_PENDING)
             self.svc_status_var.set("")
+
+        # Sync keyboard identity from device (source of truth)
+        device_mac = state.get("keyboard_mac", "")
+        device_name = state.get("keyboard_name", "")
+        if device_mac and device_mac.lower() != (cfg.get("keyboard_mac") or "").lower():
+            cfg["keyboard_mac"] = device_mac
+            cfg["keyboard_name"] = device_name
+            changed = True
+            self.kb_name_var.set(device_name)
+        elif device_mac and device_name and device_name != cfg.get("keyboard_name"):
+            cfg["keyboard_name"] = device_name
+            changed = True
+            self.kb_name_var.set(device_name)
+        elif not device_mac and cfg.get("keyboard_mac"):
+            # Device forgot the keyboard (unpaired on-device) — clear cfg
+            cfg["keyboard_mac"] = ""
+            cfg["keyboard_name"] = ""
+            changed = True
 
         saved_mac = cfg.get("keyboard_mac")
         if saved_mac:
@@ -867,6 +884,20 @@ class MainScreen(ttk.Frame):
                 self._set_section_status("keyboard", STATUS_RUNNING)
                 self._show_saved_view()
                 self.kb_status_var.set("Not connected")
+        else:
+            self._set_section_status("keyboard", STATUS_PENDING)
+            self._show_scan_view()
+
+        native_installed = state.get("native_app_installed", False)
+        cfg["native_app_installed"] = native_installed
+        if native_installed:
+            self._set_section_status("native_app", STATUS_DONE)
+            self.native_status_var.set("Installed")
+            self.native_btn.configure(text="Uninstall")
+        else:
+            self._set_section_status("native_app", STATUS_PENDING)
+            self.native_status_var.set("")
+            self.native_btn.configure(text="Install on Move")
 
         if changed:
             config.save(cfg)
@@ -874,12 +905,12 @@ class MainScreen(ttk.Frame):
     def _apply_config_state(self):
         if self.app.cfg.get("service_installed"):
             self._set_section_status("service", STATUS_DONE)
-            self.svc_status_var.set("Installed")
-            self.install_btn.configure(text="Uninstall")
+            self.svc_status_var.set("Enabled")
+            self.install_btn.configure(text="Disable")
         else:
             self._set_section_status("service", STATUS_PENDING)
             self.svc_status_var.set("")
-            self.install_btn.configure(text="Install")
+            self.install_btn.configure(text="Enable")
 
         if self.app.cfg.get("keyboard_mac"):
             self._set_section_status("keyboard", STATUS_DONE)
@@ -887,3 +918,127 @@ class MainScreen(ttk.Frame):
         else:
             self._set_section_status("keyboard", STATUS_PENDING)
             self._show_scan_view()
+
+    # ── Section 4: Native App (Experimental) ─────────────────
+
+    def _build_native_app_section(self):
+        body = self._make_section("native_app", "Native App (Experimental)")
+
+        ttk.Label(
+            body,
+            text=(
+                "Install MoveWriter on your Move so you can toggle Bluetooth, "
+                "pair/unpair keyboards, and change language directly on the "
+                "device — no computer needed."
+            ),
+            style="CardStatus.TLabel",
+            wraplength=400,
+        ).pack(anchor="w", pady=(0, 8))
+
+        ttk.Label(
+            body,
+            text=(
+                "⚠ Tested on Move OS 3.26. Disable automatic updates in your "
+                "Move's settings to avoid breakage."
+            ),
+            style="CardDim.TLabel",
+            wraplength=400,
+        ).pack(anchor="w", pady=(0, 10))
+
+        btn_row = ttk.Frame(body, style="Card.TFrame")
+        btn_row.pack(fill="x")
+
+        self.native_btn = ttk.Button(
+            btn_row, text="Install on Move", style="Accent.TButton",
+            command=self._run_native_toggle, state="disabled",
+        )
+        self.native_btn.pack(side="left")
+
+        self.native_status_var = tk.StringVar()
+        ttk.Label(
+            btn_row, textvariable=self.native_status_var,
+            style="CardStatus.TLabel",
+        ).pack(side="left", padx=(12, 0))
+
+    def _run_native_toggle(self):
+        if not self.app.ssh.is_connected:
+            self.native_status_var.set("Connect to device first.")
+            return
+
+        installed = self.app.cfg.get("native_app_installed", False)
+        if installed:
+            if not messagebox.askyesno(
+                "Uninstall Native App",
+                "This will remove MoveWriter from your Move and briefly "
+                "restart the interface. Continue?",
+            ):
+                return
+            self._run_native_uninstall()
+        else:
+            if not messagebox.askyesno(
+                "Install Native App",
+                "This will install MoveWriter on your Move and briefly "
+                "restart the interface. Your Move's screen will flicker "
+                "for a few seconds.\n\nContinue?",
+            ):
+                return
+            self._run_native_install()
+
+    def _run_native_install(self):
+        self._set_section_status("native_app", STATUS_RUNNING)
+        self.native_btn.configure(state="disabled")
+        self.native_status_var.set("Starting...")
+        self._monitor_active = False
+
+        def on_status(msg):
+            self.after(0, self.native_status_var.set, msg)
+
+        def worker():
+            try:
+                native_app_installer.install(self.app.ssh, status_cb=on_status)
+                self.after(0, self._native_installed)
+            except Exception as e:
+                self.after(0, self._native_error, str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _run_native_uninstall(self):
+        self._set_section_status("native_app", STATUS_RUNNING)
+        self.native_btn.configure(state="disabled")
+        self.native_status_var.set("Starting...")
+        self._monitor_active = False
+
+        def on_status(msg):
+            self.after(0, self.native_status_var.set, msg)
+
+        def worker():
+            try:
+                native_app_installer.uninstall(self.app.ssh, status_cb=on_status)
+                self.after(0, self._native_uninstalled)
+            except Exception as e:
+                self.after(0, self._native_error, str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _native_installed(self):
+        self._set_section_status("native_app", STATUS_DONE)
+        self.native_status_var.set("Installed")
+        self.native_btn.configure(state="normal", text="Uninstall")
+        self.app.cfg["native_app_installed"] = True
+        config.save(self.app.cfg)
+        # xochitl is restarting — wait before resuming ping
+        self.after(8000, self._start_connection_monitor)
+
+    def _native_uninstalled(self):
+        self._set_section_status("native_app", STATUS_PENDING)
+        self.native_status_var.set("")
+        self.native_btn.configure(state="normal", text="Install on Move")
+        self.app.cfg["native_app_installed"] = False
+        config.save(self.app.cfg)
+        self.after(8000, self._start_connection_monitor)
+
+    def _native_error(self, msg):
+        self._set_section_status("native_app", STATUS_ERROR)
+        self.native_btn.configure(state="normal")
+        self.native_status_var.set(f"Error: {msg[:100]}")
+        self._start_connection_monitor()

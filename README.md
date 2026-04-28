@@ -45,12 +45,12 @@ python main.py
 1. Connect your Move to your computer via USB
 2. Open MoveWriter and click **Connect to Device**
    - The SSH password is found on your Move under Settings > Help > About > Copyrights and licenses
-3. Click **Install** to set up the Bluetooth service
+3. Click **Enable** in the Bluetooth Service section to set up the on-device service
 4. Put your keyboard in pairing mode, click **Scan for Keyboards**, and pair it
 
 That's it. You can close the app — your keyboard will reconnect automatically, even after rebooting the Move.
 
-To switch keyboards or unpair, reopen the app and use **Change Keyboard** or **Unpair**.
+To switch keyboards or unpair, reopen the app and use **Change Keyboard** or **Unpair**. To remove Bluetooth keyboard support entirely, click **Disable** in the Bluetooth Service section.
 
 ## How it works
 
@@ -65,13 +65,37 @@ The service and script are installed to persistent storage on the Move, so they 
 
 ## Keyboard Language
 
-MoveWriter supports 23 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move immediately. The setting persists across reboots.
+MoveWriter supports 23 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move. The Move's UI will briefly restart for the new layout to take effect, then your keyboard works in the new language. The setting persists across reboots.
 
 Supported languages: US English, UK English, German, French, Spanish, Italian, Portuguese, Brazilian, Dutch, Swedish, Norwegian, Danish, Finnish, Swiss German, Swiss French, Belgian, Russian, Ukrainian, Czech, Hungarian, Turkish, Greek, Hebrew.
+
+## Native App (Experimental)
+
+The optional **Install on Move** button (in the *Native App (Experimental)* section) installs MoveWriter as a native AppLoad app on the Move itself. With it installed, you can manage your keyboard directly on the device — no computer needed:
+
+- Pair, unpair, and switch keyboards
+- Change keyboard layout
+- Enable/disable the Bluetooth keyboard service
+
+Open it from the Move's hamburger menu (☰) → AppLoad → MoveWriter.
+
+**Tested on Move OS 3.26.** The native app relies on community-maintained tools (XOVI and AppLoad) that are firmware-specific. To avoid breaking the install, **disable automatic updates** in your Move's settings. If a Move OS update happens, just uninstall the Native App from the desktop, update, and reinstall.
+
+What gets installed under the hood:
+- XOVI extension framework + AppLoad (via [Vellum](https://github.com/vellum-dev/vellum-cli))
+- Python 3 (via entware) for the on-device backend
+- The MoveWriter QML app and Python backend
+- A small systemd service that reactivates XOVI on every boot
+- xochitl crash-protection drop-ins (see below)
+
+Pairing keyboards from the Native App can cause a brief screen flicker (~10s) on Move 3.26 due to a firmware quirk. The crash-protection drop-ins make this a recoverable flicker rather than a frozen device. For first-time keyboard pairing, the desktop app is smoother — pair from there once, then use the Native App for day-to-day management.
+
+To remove everything cleanly, click **Uninstall** in the Native App section.
 
 ## Limitations
 
 - After rebooting the Move, you may need to power-cycle the keyboard to wake it up for reconnection
+- Pairing from the Native App can cause a brief screen flicker on Move OS 3.26 (firmware-side BlueZ/xochitl interaction). Recoverable, but pair from the desktop for the smoothest experience.
 
 ## PIN-Based keyboards
 

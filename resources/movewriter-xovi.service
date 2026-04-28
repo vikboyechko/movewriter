@@ -1,0 +1,10 @@
+[Unit]
+Description=MoveWriter XOVI Autostart
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /usr/lib/movewriter-xovi-autostart.sh
+
+[Install]
+WantedBy=multi-user.target

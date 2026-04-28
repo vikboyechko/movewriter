@@ -36,6 +36,10 @@ for i in 1 2 3 4 5 6; do
     sleep 2
 done
 
+# Make the adapter pairable — default on Move 3.26 is "Pairable: no"
+# which makes outgoing pair requests time out silently.
+bluetoothctl pairable on 2>/dev/null
+
 # Set wake lock to prevent sleep during keyboard use
 echo user.lock >> /sys/power/wake_lock
 

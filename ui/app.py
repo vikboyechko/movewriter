@@ -11,8 +11,8 @@ class App:
     def __init__(self, root):
         self.root = root
         self.root.title("MoveWriter")
-        self.root.geometry("480x920")
-        self.root.minsize(420, 700)
+        self.root.geometry("480x990")
+        self.root.minsize(420, 780)
 
         styles.configure_root(self.root)
 

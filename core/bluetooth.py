@@ -6,7 +6,13 @@ from core import service_installer
 
 
 def verify_device_state(ssh, cfg):
-    """Check actual device state vs saved config. Returns dict of booleans."""
+    """Check actual device state. Returns dict with service/keyboard state.
+
+    The Move is the source of truth: we read the keyboard MAC from
+    /home/root/.movewriter-keyboard (canonical pointer used by the BT
+    service on boot) rather than trusting the desktop config. This way,
+    changes made on the Move (via the native app) are reflected here.
+    """
     TIMEOUT = 5
 
     state = {
@@ -14,6 +20,8 @@ def verify_device_state(ssh, cfg):
         "keyboard_paired": False,
         "keyboard_connected": False,
         "bt_powered": False,
+        "keyboard_mac": "",
+        "keyboard_name": "",
     }
 
     try:
@@ -40,29 +48,50 @@ def verify_device_state(ssh, cfg):
     except Exception:
         pass
 
-    saved_mac = cfg.get("keyboard_mac")
-    if saved_mac:
+    # Source of truth: MAC file on device
+    device_mac = ""
+    try:
+        out, _, code = ssh.exec(
+            f"cat {service_installer.KEYBOARD_MAC_PATH} 2>/dev/null", timeout=TIMEOUT
+        )
+        if code == 0:
+            device_mac = out.strip()
+    except Exception:
+        pass
+
+    # Fall back to cfg if no file (older installs)
+    mac = device_mac or cfg.get("keyboard_mac", "")
+    if not mac:
+        return state
+
+    state["keyboard_mac"] = mac
+
+    try:
+        out, _, _ = ssh.exec("bluetoothctl devices Paired", timeout=TIMEOUT)
+        for line in out.strip().splitlines():
+            m = re.match(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)", line.strip())
+            if m and m.group(1).lower() == mac.lower():
+                state["keyboard_paired"] = True
+                state["keyboard_name"] = m.group(2).strip()
+                break
+    except Exception:
+        pass
+
+    if state["keyboard_paired"]:
         try:
-            out, _, _ = ssh.exec("bluetoothctl devices Paired", timeout=TIMEOUT)
-            for line in out.strip().splitlines():
-                m = re.match(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)", line.strip())
-                if m and m.group(1).lower() == saved_mac.lower():
-                    state["keyboard_paired"] = True
+            out, _, _ = ssh.exec(
+                f"bluetoothctl info {mac}", timeout=TIMEOUT
+            )
+            for line in out.splitlines():
+                if "Connected:" in line:
+                    state["keyboard_connected"] = "yes" in line.lower()
                     break
         except Exception:
             pass
 
-        if state["keyboard_paired"]:
-            try:
-                out, _, _ = ssh.exec(
-                    f"bluetoothctl info {saved_mac}", timeout=TIMEOUT
-                )
-                for line in out.splitlines():
-                    if "Connected:" in line:
-                        state["keyboard_connected"] = "yes" in line.lower()
-                        break
-            except Exception:
-                pass
+    # Fallback name if not found in paired list
+    if not state["keyboard_name"]:
+        state["keyboard_name"] = cfg.get("keyboard_name", "") or mac
 
     return state
 
