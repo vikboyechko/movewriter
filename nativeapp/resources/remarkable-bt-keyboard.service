@@ -1,0 +1,14 @@
+[Unit]
+Description=Enable Bluetooth Keyboard Support
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/home/root/.movewriter/bt-keyboard.sh
+ExecStopPost=/bin/sh -c 'echo user.lock >> /sys/power/wake_unlock'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

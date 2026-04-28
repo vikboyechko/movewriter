@@ -4,9 +4,10 @@ Deploys XOVI + AppLoad + MoveWriter native app to the Move, plus a
 persistent systemd drop-in that disables xochitl's watchdog (prevents
 reboots during BT operations).
 
-Source files for the native app are located via `native_app_root()`:
-- Production: bundled under resources/native_app/ by PyInstaller
-- Development: sibling ../movewriternative/ directory
+Source files for the native app live in the `nativeapp/` subfolder of
+this repo (single source of truth). `native_app_root()` returns either
+the in-repo path (running from source) or the PyInstaller bundle path
+(running from a built binary).
 """
 import os
 import sys
@@ -23,7 +24,7 @@ AUTOSTART_SCRIPT_PATH = "/usr/lib/movewriter-xovi-autostart.sh"
 EMERGENCY_DROPIN_DIR = "/usr/lib/systemd/system/rm-emergency.service.d"
 EMERGENCY_DROPIN_PATH = f"{EMERGENCY_DROPIN_DIR}/zz-movewriter.conf"
 
-# App layout (mirrors movewriternative repo structure)
+# App layout (mirrors nativeapp/ subfolder structure)
 APP_FILES = {
     "": ["manifest.json", "resources.rcc"],
     "backend": [
@@ -44,21 +45,21 @@ APP_FILES = {
 
 def native_app_root():
     """Locate the native app source tree."""
-    # PyInstaller bundle
+    # Source checkout: nativeapp/ subfolder of this repo
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    in_repo = os.path.join(here, "nativeapp")
+    if os.path.isdir(in_repo):
+        return in_repo
+
+    # PyInstaller bundle: stages the same nativeapp/ directory
     if getattr(sys, "_MEIPASS", None):
-        bundled = os.path.join(sys._MEIPASS, "resources", "native_app")
+        bundled = os.path.join(sys._MEIPASS, "nativeapp")
         if os.path.isdir(bundled):
             return bundled
 
-    # Development: sibling repo
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    dev = os.path.normpath(os.path.join(here, "..", "movewriternative"))
-    if os.path.isdir(dev):
-        return dev
-
     raise RuntimeError(
         "Cannot locate MoveWriter native app source. "
-        "Expected at ../movewriternative/ or bundled in resources/native_app/."
+        "Expected at nativeapp/ alongside core/."
     )
 
 
@@ -227,7 +228,7 @@ def _upload_app(ssh, root):
                 # Optional files (e.g., resources.rcc before build, icon.png)
                 if name in ("resources.rcc",):
                     raise RuntimeError(
-                        f"Missing {local} — run `./build.sh` in movewriternative first"
+                        f"Missing {local} -- run `./build.sh` in nativeapp/ first"
                     )
                 continue
             with open(local, "rb") as f:

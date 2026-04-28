@@ -1,0 +1,8 @@
+{
+  "name": "MoveWriter",
+  "id": "movewriter",
+  "version": "2.0",
+  "loadsBackend": true,
+  "entry": "/qml/main.qml",
+  "supportsScaling": true
+}

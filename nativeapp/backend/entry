@@ -1,0 +1,19 @@
+#!/bin/sh
+# AppLoad backend entry point — launches Python backend with socket path
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Ensure entware /opt is mounted (may be unmounted during XOVI start)
+if [ ! -x /opt/bin/python3 ] && [ -d /home/root/.entware ]; then
+    mount --bind /home/root/.entware /opt 2>/dev/null
+fi
+
+export PATH="/opt/bin:/opt/sbin:$PATH"
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Error: python3 not found. Install via: opkg install python3" >&2
+    exit 1
+fi
+
+cd "$APP_DIR"
+exec python3 -m backend.main "$1"

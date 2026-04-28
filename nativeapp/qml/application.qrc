@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="qml/main.qml">main.qml</file>
+        <file alias="qml/ServiceSection.qml">ServiceSection.qml</file>
+        <file alias="qml/KeyboardSection.qml">KeyboardSection.qml</file>
+        <file alias="qml/PasskeyOverlay.qml">PasskeyOverlay.qml</file>
+        <file alias="qml/components/Card.qml">components/Card.qml</file>
+        <file alias="qml/components/StatusDot.qml">components/StatusDot.qml</file>
+        <file alias="qml/components/ActionButton.qml">components/ActionButton.qml</file>
+        <file alias="qml/components/DeviceList.qml">components/DeviceList.qml</file>
+    </qresource>
+</RCC>
