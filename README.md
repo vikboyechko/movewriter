@@ -103,4 +103,4 @@ Some Bluetooth keyboards require a PIN code to pair. MoveWriter supports this fo
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE.md) — free for personal and noncommercial use.
+[The Unlicense](LICENSE.md) — public domain. Do whatever you want.
