@@ -65,9 +65,9 @@ The service and script are installed to persistent storage on the Move, so they 
 
 ## Keyboard Language
 
-MoveWriter supports 23 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move. The Move's UI will briefly restart for the new layout to take effect, then your keyboard works in the new language. The setting persists across reboots.
+MoveWriter supports 24 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move. The Move's UI will briefly restart for the new layout to take effect, then your keyboard works in the new language. The setting persists across reboots.
 
-Supported languages: US English, UK English, German, French, Spanish, Italian, Portuguese, Brazilian, Dutch, Swedish, Norwegian, Danish, Finnish, Swiss German, Swiss French, Belgian, Russian, Ukrainian, Czech, Hungarian, Turkish, Greek, Hebrew.
+Supported languages: US English, UK English, German, French, Spanish, Italian, Portuguese, Brazilian, Dutch, Swedish, Norwegian, Danish, Finnish, Icelandic, Swiss German, Swiss French, Belgian, Russian, Ukrainian, Czech, Hungarian, Turkish, Greek, Hebrew.
 
 ## Native App (Experimental)
 

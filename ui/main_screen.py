@@ -44,6 +44,7 @@ KEYBOARD_LAYOUTS = [
     ("Norwegian", "no"),
     ("Danish", "dk"),
     ("Finnish", "fi"),
+    ("Icelandic", "is"),
     ("Swiss German", "de_ch"),
     ("Swiss French", "fr_ch"),
     ("Belgian", "be"),

@@ -556,6 +556,32 @@ def finnish_layout():
     return swedish_layout()
 
 
+def icelandic_layout():
+    """Icelandic — QWERTY with ð, þ, æ, ö on punctuation keys.
+    Nordic-style number row (shift-2=", shift-7=/, etc)."""
+    punct = [
+        (3,  0x32, 0x32, 0x22, 0x22),       # 2 / "
+        (4,  0x33, 0x33, 0x23, 0x23),       # 3 / #
+        (7,  0x36, 0x36, 0x26, 0x26),       # 6 / &
+        (8,  0x37, 0x37, 0x2F, 0x2F),       # 7 / /
+        (9,  0x38, 0x38, 0x28, 0x28),       # 8 / (
+        (10, 0x39, 0x39, 0x29, 0x29),       # 9 / )
+        (11, 0x30, 0x30, 0x3D, 0x3D),       # 0 / =
+        (12, 0x00F6, 0x00D6, 0x00D6, 0x00D6),  # ö / Ö
+        (13, 0x2D, 0x2D, 0x5F, 0x5F),       # - / _
+        (26, 0x00F0, 0x00D0, 0x00D0, 0x00D0),  # ð / Ð
+        (27, 0x27, 0x27, 0x3F, 0x3F),       # ' / ?
+        (39, 0x00E6, 0x00C6, 0x00C6, 0x00C6),  # æ / Æ
+        (40, 0x00B4, 0x00B4, 0x00A8, 0x00A8),  # ´ / ¨ (acute / diaeresis)
+        (41, 0x00B0, 0x00B0, 0x00A8, 0x00A8),  # ° / ¨
+        (43, 0x2B, 0x2B, 0x2A, 0x2A),       # + / *
+        (51, 0x2C, 0x2C, 0x3B, 0x3B),       # , / ;
+        (52, 0x2E, 0x2E, 0x3A, 0x3A),       # . / :
+        (53, 0x00FE, 0x00DE, 0x00DE, 0x00DE),  # þ / Þ
+    ]
+    return _us_letters(), punct
+
+
 def swiss_german_layout():
     """Swiss German — QWERTZ with ü, ö, ä on punctuation keys."""
     punct = [
@@ -926,6 +952,7 @@ LAYOUTS = {
     "no": norwegian_layout,
     "dk": danish_layout,
     "fi": finnish_layout,
+    "is": icelandic_layout,
     "de_ch": swiss_german_layout,
     "fr_ch": swiss_french_layout,
     "be": belgian_layout,
