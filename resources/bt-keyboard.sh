@@ -45,25 +45,56 @@ echo user.lock >> /sys/power/wake_lock
 
 # ── Keyboard connect ──────────────────────────────────────
 
-try_connect() {
-    MAC="$1"
-    # Trust first so BlueZ auto-accepts
-    bluetoothctl trust "$MAC" 2>/dev/null
+is_connected() {
+    bluetoothctl info "$1" 2>/dev/null | grep -q "Connected: yes"
+}
 
-    # BLE keyboards require a scan before connect — without it, bluez doesn't
-    # know the device is nearby and connect fails silently
+is_paired() {
+    bluetoothctl info "$1" 2>/dev/null | grep -q "Paired: yes"
+}
+
+# Establish the bond for a keyboard that is not paired yet. This is the original
+# scan + agent + pair flow. For a SAVED keyboard it almost never runs — pairing
+# is normally done by the desktop/native-app pair flow — but it stays as a
+# fallback in case the bond was somehow lost.
+pair_unbonded() {
+    MAC="$1"
+    # BLE keyboards need a scan before the first pair so bluez sees them nearby.
     (echo "scan on"; sleep 5; echo "scan off") | bluetoothctl >/dev/null 2>&1
     sleep 1
-
-    # Re-pair with NoInputNoOutput agent (pairing data is volatile on the Move)
     bluetoothctl <<EOF
 agent NoInputNoOutput
 default-agent
 pair $MAC
 EOF
     sleep 2
+}
 
-    # Connect with timeout — BLE connect can hang indefinitely
+# Reconnect the saved keyboard WITHOUT disrupting an existing link.
+#
+# By the time this service runs the keyboard is already bonded — the bond in
+# /var/lib/bluetooth is persistent on 3.26 — and BlueZ auto-connects bonded +
+# trusted keyboards on its own, both at boot and when a BLE keyboard wakes from
+# sleep and re-advertises. So for a bonded device we must NOT re-pair or run an
+# active scan:
+#   * re-pairing a live device tears the HID link down
+#     (bluetoothd logs "No matching connection for device")
+#   * an active "scan on" suspends BlueZ's passive background auto-connect
+# We just keep it trusted (so BlueZ auto-accepts) and issue a plain connect as a
+# nudge/safety-net when it is down. A plain connect is a quick no-op when the
+# keyboard is asleep, and is what BR/EDR keyboards (e.g. BOOX) need to reconnect.
+ensure_connected() {
+    MAC="$1"
+    is_connected "$MAC" && return 0
+
+    bluetoothctl trust "$MAC" >/dev/null 2>&1
+
+    if ! is_paired "$MAC"; then
+        pair_unbonded "$MAC"
+    fi
+
+    # Plain connect with a timeout — connect can hang if the keyboard is asleep;
+    # bail after a few seconds and let the next cycle (or BlueZ) retry.
     bluetoothctl connect "$MAC" >/dev/null 2>&1 &
     CPID=$!
     sleep 5
@@ -71,33 +102,25 @@ EOF
     wait $CPID 2>/dev/null
 }
 
-is_connected() {
-    MAC="$1"
-    bluetoothctl info "$MAC" 2>/dev/null | grep -q "Connected: yes"
-}
-
-# Initial keyboard connection (with retries, keyboard may take a moment)
+# Initial keyboard connection. BlueZ usually auto-connects a bonded keyboard
+# within a few seconds of boot, so check first and only nudge if it is down.
 if [ -f "$MAC_FILE" ]; then
     MAC=$(cat "$MAC_FILE")
     for i in 1 2 3 4 5 6 7 8; do
-        try_connect "$MAC"
-        sleep 2
-        if is_connected "$MAC"; then
-            break
-        fi
+        is_connected "$MAC" && break
+        ensure_connected "$MAC"
         sleep 3
     done
 fi
 
 # ── Monitor loop ──────────────────────────────────────────
-# Check keyboard connection periodically and reconnect if dropped
+# Reconnect if the link drops. ensure_connected is a no-op while connected, so
+# this never disturbs a working keyboard.
 
 while true; do
     sleep "$RECONNECT_INTERVAL"
     if [ -f "$MAC_FILE" ]; then
         MAC=$(cat "$MAC_FILE")
-        if ! is_connected "$MAC"; then
-            try_connect "$MAC"
-        fi
+        ensure_connected "$MAC"
     fi
 done
