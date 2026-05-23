@@ -939,8 +939,9 @@ class MainScreen(ttk.Frame):
         ttk.Label(
             body,
             text=(
-                "⚠ Tested on Move OS 3.26. Disable automatic updates in your "
-                "Move's settings to avoid breakage."
+                "⚠ The Native App can be buggy and isn't recommended for "
+                "general use. Install it only if you need to manage keyboards "
+                "on the Move without your computer."
             ),
             style="CardDim.TLabel",
             wraplength=400,
