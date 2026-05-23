@@ -978,9 +978,12 @@ class MainScreen(ttk.Frame):
         else:
             if not messagebox.askyesno(
                 "Install Native App",
-                "This will install MoveWriter on your Move and briefly "
-                "restart the interface. Your Move's screen will flicker "
-                "for a few seconds.\n\nContinue?",
+                "This installs MoveWriter on your Move and takes up to "
+                "~2 minutes.\n\n"
+                "During setup the Move's screen will go blank and flicker "
+                "once or twice — that's normal, not a crash. Please wait "
+                "until this says \"Installed\" and don't close the app or "
+                "unplug the Move.\n\nContinue?",
             ):
                 return
             self._run_native_install()

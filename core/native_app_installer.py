@@ -24,6 +24,10 @@ AUTOSTART_SCRIPT_PATH = "/usr/lib/movewriter-xovi-autostart.sh"
 EMERGENCY_DROPIN_DIR = "/usr/lib/systemd/system/rm-emergency.service.d"
 EMERGENCY_DROPIN_PATH = f"{EMERGENCY_DROPIN_DIR}/zz-movewriter.conf"
 
+# vellum lives in /home/root/.vellum/bin and entware tools in /opt; the SSH exec
+# is a non-login shell, so set PATH explicitly for every vellum invocation.
+VELLUM_ENV = "export PATH=/opt/bin:/opt/sbin:/home/root/.vellum/bin:$PATH; "
+
 # App layout (mirrors nativeapp/ subfolder structure)
 APP_FILES = {
     "": ["manifest.json", "resources.rcc"],
@@ -94,6 +98,16 @@ def install(ssh, status_cb=None):
     _ensure_xovi(ssh, say)
     _ensure_appload(ssh, say)
 
+    # Heal across firmware updates. A forced OTA bumps the OS, wipes the
+    # system-partition mods, and leaves a stale hashtab — and the _ensure_*
+    # steps above no-op when the dirs already exist, so a plain reinstall would
+    # NOT recover. Run the vellum recovery every time (idempotent when healthy):
+    # upgrade (pull OS-compatible versions + sync OS) -> check-os gate ->
+    # reenable (restore the system-partition mods).
+    _vellum_upgrade(ssh, say)
+    _check_os_supported(ssh, say)
+    _vellum_reenable(ssh, say)
+
     say("Uploading app files...")
     _upload_app(ssh, root)
 
@@ -104,10 +118,12 @@ def install(ssh, status_cb=None):
     say("Setting up boot autostart...")
     _install_autostart(ssh)
 
-    say("Restarting Move interface...")
-    # systemctl restart xochitl — fire and forget with & so it doesn't kill
-    # the SSH command mid-execution. The UI briefly flickers.
-    ssh.exec("(sleep 1 && systemctl restart xochitl) &", timeout=5)
+    # Rebuild the hashtab for THIS xochitl (required after any firmware change;
+    # also the hard XOVI-compat gate — aborts if XOVI can't load this xochitl),
+    # then activate XOVI via the autostart script so the install brings the app
+    # up now rather than only on the next reboot.
+    _rebuild_hashtable(ssh, say)
+    _activate_xovi(ssh, say)
 
     say("Install complete")
 
@@ -210,6 +226,124 @@ def _ensure_appload(ssh, say):
         )
         if code != 0:
             raise RuntimeError("AppLoad install failed")
+
+
+# ── Firmware-update recovery ──────────────────────────────────
+# A forced OTA wipes the system-partition mods (XOVI activation) and leaves the
+# qt-resource-rebuilder hashtab keyed to the OLD xochitl. These run on every
+# install so that a reinstall HEALS a force-updated device (idempotent when the
+# device is already healthy). This is the sequence validated by hand on 3.27.
+
+def _current_os_version(ssh):
+    """Device firmware version, e.g. '3.27.1.0' (empty string if unreadable)."""
+    out, _, _ = ssh.exec('. /etc/os-release && echo "$IMG_VERSION"', timeout=5)
+    return (out or "").strip()
+
+
+def _vellum_upgrade(ssh, say):
+    """Pull OS-compatible package versions and sync vellum's recorded OS.
+
+    `vellum upgrade` is documented to handle OS-version changes; it's a no-op on
+    an already-current install. The `yes |` answers its confirmation prompt
+    (the SSH exec is non-interactive).
+    """
+    say("Updating components for current firmware...")
+    ssh.exec(f"{VELLUM_ENV} yes | vellum upgrade", timeout=300)
+
+
+def _check_os_supported(ssh, say):
+    """Stop the install early if XOVI's packages don't support this firmware.
+
+    Avoids activating into a boot-flicker loop when reMarkable ships a new
+    firmware before XOVI/AppLoad upstream catch up. Only the on-device app is
+    gated — the Bluetooth keyboard service is unaffected. Advisory: the hashtab
+    rebuild is the hard gate, so we hard-stop only on explicit incompatibility.
+    """
+    os_ver = _current_os_version(ssh)
+    if not os_ver:
+        return
+    out, _, _ = ssh.exec(f"{VELLUM_ENV} vellum check-os {os_ver}", timeout=60)
+    text = (out or "").lower()
+    if "all packages are compatible" in text:
+        return
+    if "incompatible" in text or "not compatible" in text:
+        raise RuntimeError(
+            f"XOVI/AppLoad don't support firmware {os_ver} yet, so the on-device "
+            f"app can't be installed safely right now. Your Bluetooth keyboard "
+            f"still works — try the native app again once XOVI adds {os_ver} support."
+        )
+    say(f"Note: couldn't confirm {os_ver} compatibility; the rebuild step verifies it.")
+
+
+def _vellum_reenable(ssh, say):
+    """Restore XOVI's system-partition modifications after an OS upgrade."""
+    say("Restoring system modifications...")
+    ssh.exec(f"{VELLUM_ENV} yes | vellum reenable", timeout=120)
+
+
+def _rebuild_hashtable(ssh, say):
+    """Rebuild the qt-resource-rebuilder hashtab for the CURRENT xochitl.
+
+    Required after any firmware change (the hashtab is keyed to xochitl's QML).
+    The rebuild runs a headless xochitl that occasionally HANGS on startup, so a
+    naive blocking call would freeze the install, leave orphaned processes, and
+    could falsely proceed. Instead we run it BOUNDED in the background, poll for
+    the hashtab + "Hashtab saved", then hard-KILL the rebuild chain (no orphans)
+    if it doesn't finish in time. The hang is intermittent, so we retry once.
+    On total failure we restart stock xochitl (never leave the screen dark) and
+    abort. Stops xochitl while it runs (~1-2 min; the device screen blanks).
+    """
+    bounded_rebuild = (
+        'HT=/home/root/xovi/exthome/qt-resource-rebuilder/hashtab; '
+        'rm -f "$HT"; '
+        '( echo "" | bash /home/root/xovi/rebuild_hashtable >/tmp/mw_rb.log 2>&1 ) & '
+        'i=0; while [ $i -lt 25 ]; do sleep 4; '
+        'if [ -f "$HT" ] && grep -q "Hashtab saved" /tmp/mw_rb.log 2>/dev/null; then break; fi; '
+        'i=$((i+1)); done; '
+        'pkill -9 -f rebuild_hashtable 2>/dev/null; kill -9 $(pidof xochitl) 2>/dev/null; sleep 1; '
+        'if [ -f "$HT" ] && grep -q "Hashtab saved" /tmp/mw_rb.log 2>/dev/null; '
+        'then echo MW_OK; else echo MW_FAIL; fi'
+    )
+    for n in (1, 2):
+        say("Rebuilding interface resources (~1-2 min; screen will flicker — please wait)"
+            + ("..." if n == 1 else " — retrying..."))
+        out, _, _ = ssh.exec(bounded_rebuild, timeout=150)
+        if "MW_OK" in (out or ""):
+            return
+    # Both attempts failed: don't leave the device dark or half-activated.
+    ssh.exec("systemctl start xochitl.service", timeout=20)
+    raise RuntimeError(
+        "Couldn't rebuild the interface resources — xochitl kept hanging "
+        "during the rebuild. Stopped before activation so the device isn't left "
+        "in a bad state; your Bluetooth keyboard service is unaffected. Please "
+        "try the install again."
+    )
+
+
+def _activate_xovi(ssh, say):
+    """Bring xochitl up WITH xovi.so via the autostart script, then VERIFY it
+    actually loaded — so the install never reports success when XOVI didn't
+    activate. (A bare `systemctl restart xochitl` would start xochitl WITHOUT
+    XOVI.)"""
+    say("Activating MoveWriter...")
+    # Clear the autostart failsafe counter — the hashtab rebuild just proved
+    # XOVI loads, so give the device a clean slate.
+    ssh.exec(
+        "rm -f /home/root/.movewriter/xovi-activation-attempts 2>/dev/null || true",
+        timeout=5,
+    )
+    ssh.exec(f"bash {AUTOSTART_SCRIPT_PATH}", timeout=90)
+    out, _, _ = ssh.exec(
+        'sleep 4; XPID=$(pidof xochitl); '
+        'if tr "\\0" "\\n" </proc/$XPID/environ 2>/dev/null | grep -q xovi.so; '
+        'then echo MW_XOVI_OK; else echo MW_XOVI_NO; fi',
+        timeout=20,
+    )
+    if "MW_XOVI_OK" not in (out or ""):
+        raise RuntimeError(
+            "XOVI didn't activate after install, so MoveWriter may not appear in "
+            "the menu. Try rebooting the Move and reinstalling."
+        )
 
 
 def _upload_app(ssh, root):

@@ -106,12 +106,11 @@ def uninstall():
     except FileNotFoundError:
         pass
 
-    # Clean up script, MAC file, and movewriter directory
+    # Clean up the script directory, but KEEP the saved keyboard MAC file:
+    # disabling the service shouldn't forget the paired keyboard — re-enabling
+    # restores it (the bond in /var/lib/bluetooth persists regardless). Use the
+    # explicit unpair flow (clear_keyboard_mac) to actually forget a keyboard.
     shutil.rmtree(SCRIPT_DIR, ignore_errors=True)
-    try:
-        os.remove(KEYBOARD_MAC_PATH)
-    except FileNotFoundError:
-        pass
 
     _run("systemctl daemon-reload", timeout=5)
 

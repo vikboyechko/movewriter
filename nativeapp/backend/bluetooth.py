@@ -21,47 +21,86 @@ def _run(cmd, timeout=10):
     return result.stdout, result.stderr, result.returncode
 
 
-def read_device_keyboard():
-    """Return (mac, name) for the keyboard currently set up on this Move.
+def _paired_devices():
+    """List of (mac, name) paired devices, or None if the adapter is unavailable.
 
-    Reads from the on-device MAC file (source of truth), validates that
-    BlueZ actually still has it paired, and returns the BlueZ name. If
-    the MAC file exists but BlueZ doesn't know the device (e.g., a pair
-    was interrupted mid-flight or the user unpaired externally), the
-    stale MAC file is removed and ("", "") is returned.
+    Distinguishing "no devices" from "adapter is off" matters: we must NOT wipe
+    a saved keyboard just because Bluetooth is currently powered down.
     """
+    out, err, code = _run("bluetoothctl devices Paired", timeout=5)
+    if code != 0 or "No default controller" in (out + err):
+        return None
+    devices = []
+    for line in out.strip().splitlines():
+        m = re.match(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)", line.strip())
+        if m:
+            devices.append((m.group(1), m.group(2).strip()))
+    return devices
+
+
+def _connected_keyboard():
+    """(mac, name) of the first BT keyboard currently CONNECTED, or ("", "")."""
+    out, _, code = _run("bluetoothctl devices Connected", timeout=5)
+    if code != 0:
+        return "", ""
+    for line in out.strip().splitlines():
+        m = re.match(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)", line.strip())
+        if not m:
+            continue
+        mac, name = m.group(1), m.group(2).strip()
+        info, _, _ = _run(f"bluetoothctl info {mac}", timeout=5)
+        # input-keyboard icon or the HID-over-GATT UUID (0x1812) marks a keyboard
+        if "input-keyboard" in info or "00001812" in info.lower():
+            return mac, name
+    return "", ""
+
+
+def read_device_keyboard():
+    """Return (mac, name) for the keyboard set up on this Move.
+
+    Source of truth, in order:
+      1. The saved MAC file, if BlueZ still lists it paired — or if the adapter
+         is currently OFF (then we can't verify, so we trust the saved MAC
+         rather than wiping it just because Bluetooth is powered down).
+      2. Otherwise, any keyboard currently CONNECTED in BlueZ — so a keyboard
+         that's connected but unsaved (e.g. a pair that flickered before saving,
+         or after the BT service was toggled) still appears in the UI. Its MAC
+         is saved so it's remembered.
+    The stale MAC file is removed only when the adapter is up AND the device is
+    genuinely no longer paired — never just because Bluetooth is off.
+    """
+    saved_mac = ""
     try:
         with open(service.KEYBOARD_MAC_PATH) as f:
-            mac = f.read().strip()
+            saved_mac = f.read().strip()
     except (FileNotFoundError, OSError):
-        return "", ""
-
-    if not mac:
-        return "", ""
-
-    name = ""
-    actually_paired = False
-    try:
-        out, _, _ = _run("bluetoothctl devices Paired", timeout=5)
-        for line in out.strip().splitlines():
-            m = re.match(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)", line.strip())
-            if m and m.group(1).lower() == mac.lower():
-                name = m.group(2).strip()
-                actually_paired = True
-                break
-    except Exception:
         pass
 
-    if not actually_paired:
-        # Stale MAC file — clear it so the reconnect loop stops trying
-        # a phantom device and the UI doesn't show a ghost keyboard.
+    paired = _paired_devices()
+
+    if saved_mac:
+        if paired is None:
+            # Adapter unavailable — can't verify; trust the saved keyboard.
+            return saved_mac, ""
+        for mac, name in paired:
+            if mac.lower() == saved_mac.lower():
+                return saved_mac, name
+        # Adapter is up but the saved device is genuinely gone — drop the stale
+        # MAC file, then fall through to live-connection detection.
         try:
             os.remove(service.KEYBOARD_MAC_PATH)
         except OSError:
             pass
-        return "", ""
 
-    return mac, name
+    # No valid saved keyboard — surface one that's actually connected, if any.
+    mac, name = _connected_keyboard()
+    if mac:
+        try:
+            service.save_keyboard_mac(mac)  # remember it for the reconnect loop + UI
+        except OSError:
+            pass
+        return mac, name
+    return "", ""
 
 
 def verify_device_state(cfg):

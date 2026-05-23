@@ -326,8 +326,8 @@ class Backend:
         """Disable Bluetooth keyboard support on the Move."""
         service.uninstall()
         self.cfg["service_installed"] = False
-        self.cfg["keyboard_mac"] = ""
-        self.cfg["keyboard_name"] = ""
+        # Keep keyboard_mac/name — disabling the service shouldn't forget the
+        # paired keyboard; re-enabling restores it. (Unpair to actually forget.)
         self.cfg["keyboard_layout"] = "US English"
         config.save(self.cfg)
         return {"service_installed": False}
