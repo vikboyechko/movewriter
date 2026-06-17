@@ -56,6 +56,30 @@ Key_ScrollLock = 0x01000026
 Key_F1 = 0x01000030
 Key_Space = 0x20
 
+# Dead-key Qt codes. The Move firmware's keyboard handler COMPOSES these with
+# the next keystroke (dead circumflex + e → ê). Verified on-device: it composes
+# grave / acute / circumflex / diaeresis / tilde — there is NO dead cedilla.
+# A layout marks a key as dead by using one of these as the key's qtcode in its
+# punct table; the unicode should be the matching value from DEAD_KEY_UNICODE.
+Key_Dead_Grave = 0x01001250
+Key_Dead_Acute = 0x01001251
+Key_Dead_Circumflex = 0x01001252
+Key_Dead_Tilde = 0x01001253
+Key_Dead_Diaeresis = 0x01001257
+
+DEAD_KEY_QT_MIN = 0x01001250
+DEAD_KEY_QT_MAX = 0x01001263
+
+# Unicode value the firmware stores for each dead key (matches its built-in
+# keymap, so composed output is identical to the stock dead keys).
+DEAD_KEY_UNICODE = {
+    Key_Dead_Grave: 0x0060,       # `
+    Key_Dead_Acute: 0x00B4,       # ´
+    Key_Dead_Circumflex: 0x0302,  # combining circumflex
+    Key_Dead_Tilde: 0x0303,       # combining tilde
+    Key_Dead_Diaeresis: 0x0308,   # combining diaeresis
+}
+
 
 def _base_entries():
     """Non-letter entries shared by all layouts."""
@@ -192,8 +216,12 @@ def _punctuation_entries(punct_map):
     """
     entries = []
     for kc, plain_u, plain_qt, shift_u, shift_qt in punct_map:
-        entries.append((kc, plain_u, plain_qt, MOD_PLAIN, 0, 0))
-        entries.append((kc, shift_u, shift_qt, MOD_SHIFT, 0, 0))
+        # A dead-key qtcode marks the level as a dead key (FLAG_DEAD + special=1),
+        # which the firmware composes with the following keystroke.
+        p_dead = DEAD_KEY_QT_MIN <= plain_qt <= DEAD_KEY_QT_MAX
+        s_dead = DEAD_KEY_QT_MIN <= shift_qt <= DEAD_KEY_QT_MAX
+        entries.append((kc, plain_u, plain_qt, MOD_PLAIN, FLAG_DEAD if p_dead else 0, 1 if p_dead else 0))
+        entries.append((kc, shift_u, shift_qt, MOD_SHIFT, FLAG_DEAD if s_dead else 0, 1 if s_dead else 0))
     return entries
 
 
@@ -373,6 +401,56 @@ def french_layout():
     punct.append((50, 0x2C, 0x2C, 0x3F, 0x3F))
 
     return letters, punct
+
+
+def canadian_french_layout():
+    """Canadian French — Canadian Multilingual Standard (CSA).
+
+    QWERTY letters (same physical positions as US). Accents are reached the
+    standard CSA way — a mix of direct keys and dead keys the Move firmware
+    composes (verified on-device):
+
+      Direct keys:
+        /? key  → é / É        (CSA's eacute position)
+        '  key  → è / È
+        \\  key → à / À
+        ]  key  → ç / Ç        (CSA's cedilla position; mapped DIRECT because
+                                 the firmware has no dead-cedilla composer)
+      Dead keys (press, then a letter):
+        [  key  → circumflex (base) / diaeresis (shift)  → â ê î ô û, ë ï ü
+        `  key  → grave (base) / tilde (shift)           → à è ù ò ì, ã ñ õ
+
+    Number-row shifts follow CSA so the characters displaced from the /? key
+    survive: Shift+3 = /, Shift+6 = ?. The \\, ], ' keys give accented letters
+    instead of their US punctuation (apostrophe/quote move to Shift+comma /
+    Shift+period); [ ] { } | < > are not produced by this layout.
+    """
+    DC, DD = Key_Dead_Circumflex, Key_Dead_Diaeresis
+    DG, DT = Key_Dead_Grave, Key_Dead_Tilde
+    U = DEAD_KEY_UNICODE
+    punct = [
+        # Number row — CSA shifts (only the keys that differ from US)
+        (3,  0x32, 0x32, 0x22, 0x22),       # 2 / "
+        (4,  0x33, 0x33, 0x2F, 0x2F),       # 3 / /
+        (7,  0x36, 0x36, 0x3F, 0x3F),       # 6 / ?
+        # Backtick key → dead grave / dead tilde
+        (41, U[DG], DG, U[DT], DT),
+        # [ key → dead circumflex / dead diaeresis
+        (26, U[DC], DC, U[DD], DD),
+        # ] key → ç / Ç (direct — firmware has no dead cedilla)
+        (27, 0x00E7, 0x00E7, 0x00C7, 0x00C7),
+        # ' key → è / È (direct)
+        (40, 0x00E8, 0x00E8, 0x00C8, 0x00C8),
+        # comma → , / '  (apostrophe relocated here, CSA)
+        (51, 0x2C, 0x2C, 0x27, 0x27),
+        # period → . / "  (double-quote relocated here)
+        (52, 0x2E, 0x2E, 0x22, 0x22),
+        # /? key → é / É (direct)
+        (53, 0x00E9, 0x00E9, 0x00C9, 0x00C9),
+        # \\ key → à / À (direct)
+        (43, 0x00E0, 0x00E0, 0x00C0, 0x00C0),
+    ]
+    return _us_letters(), punct
 
 
 def spanish_layout():
@@ -943,6 +1021,7 @@ LAYOUTS = {
     "uk": uk_layout,
     "de": german_layout,
     "fr": french_layout,
+    "fr_ca": canadian_french_layout,
     "es": spanish_layout,
     "it": italian_layout,
     "pt": portuguese_layout,

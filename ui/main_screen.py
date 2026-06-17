@@ -35,6 +35,7 @@ KEYBOARD_LAYOUTS = [
     ("UK English", "uk"),
     ("German", "de"),
     ("French", "fr"),
+    ("Canadian French", "fr_ca"),
     ("Spanish", "es"),
     ("Italian", "it"),
     ("Portuguese", "pt"),
@@ -146,8 +147,36 @@ class MainScreen(ttk.Frame):
     # ── Build UI ──────────────────────────────────────────────
 
     def _build_ui(self):
+        # Scrollable container so the whole UI (incl. the Native App section)
+        # stays reachable on short/low-res screens where the window is taller
+        # than the display. All content is built into self._scroll_body; the
+        # scrollbar only appears when the content overflows.
+        canvas = tk.Canvas(self, bg=styles.BG, highlightthickness=0, bd=0)
+        canvas.pack(side="left", fill="both", expand=True)
+        self._scroll_canvas = canvas
+
+        self._scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=self._scrollbar.set)
+
+        body = ttk.Frame(canvas, style="TFrame")
+        self._scroll_body = body
+        self._body_window = canvas.create_window((0, 0), window=body, anchor="nw")
+
+        def _on_body_config(_event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            self._update_scrollbar_visibility()
+
+        def _on_canvas_config(event):
+            # Keep the inner body the same width as the canvas viewport.
+            canvas.itemconfigure(self._body_window, width=event.width)
+            self._update_scrollbar_visibility()
+
+        body.bind("<Configure>", _on_body_config)
+        canvas.bind("<Configure>", _on_canvas_config)
+        self._bind_mousewheel()
+
         # Logo header
-        logo_frame = ttk.Frame(self, style="TFrame")
+        logo_frame = ttk.Frame(body, style="TFrame")
         logo_frame.pack(fill="x", padx=PADDING_X, pady=(20, 4))
 
         logo_path = os.path.join(
@@ -166,7 +195,7 @@ class MainScreen(ttk.Frame):
             )
 
         # Separator
-        sep = ttk.Frame(self, height=1)
+        sep = ttk.Frame(self._scroll_body, height=1)
         sep.pack(fill="x", padx=PADDING_X, pady=(8, 4))
         tk.Frame(sep, bg=styles.BORDER, height=1).pack(fill="x")
 
@@ -176,10 +205,42 @@ class MainScreen(ttk.Frame):
         self._build_keyboard_section()
         self._build_native_app_section()
 
+    # ── Scrolling ──────────────────────────────────────────────
+
+    def _update_scrollbar_visibility(self):
+        """Show the scrollbar only when content overflows the viewport."""
+        canvas = self._scroll_canvas
+        bbox = canvas.bbox("all")
+        if not bbox:
+            return
+        overflows = (bbox[3] - bbox[1]) > canvas.winfo_height()
+        if overflows and not self._scrollbar.winfo_ismapped():
+            self._scrollbar.pack(side="right", fill="y")
+        elif not overflows and self._scrollbar.winfo_ismapped():
+            self._scrollbar.pack_forget()
+            canvas.yview_moveto(0)
+
+    def _bind_mousewheel(self):
+        """Route mouse-wheel / trackpad scrolling to the canvas (no-op when
+        the scrollbar is hidden)."""
+        def _on_wheel(event):
+            if not self._scrollbar.winfo_ismapped():
+                return
+            if event.num == 4:        # X11 wheel up
+                self._scroll_canvas.yview_scroll(-1, "units")
+            elif event.num == 5:      # X11 wheel down
+                self._scroll_canvas.yview_scroll(1, "units")
+            else:                      # macOS / Windows
+                self._scroll_canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+        self.bind_all("<MouseWheel>", _on_wheel)
+        self.bind_all("<Button-4>", _on_wheel)
+        self.bind_all("<Button-5>", _on_wheel)
+
     # ── Card helper ────────────────────────────────────────────
 
     def _make_section(self, name, title):
-        outer = ttk.Frame(self, style="Card.TFrame")
+        outer = ttk.Frame(self._scroll_body, style="Card.TFrame")
         outer.pack(fill="x", padx=PADDING_X, pady=(8, 0))
 
         border = tk.Frame(outer, bg=styles.BORDER, padx=1, pady=1)

@@ -27,6 +27,7 @@ KEYBOARD_LAYOUTS = [
     ("UK English", "uk"),
     ("German", "de"),
     ("French", "fr"),
+    ("Canadian French", "fr_ca"),
     ("Spanish", "es"),
     ("Italian", "it"),
     ("Portuguese", "pt"),

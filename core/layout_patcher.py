@@ -82,9 +82,27 @@ def _patch_binary(data, layout_key):
     patched = bytearray(data)
     patch_count = 0
 
-    # Qt dead key qtcode range — entries with these need qtcode/special patched too
+    # Qt dead key qtcode range. In this firmware a dead key is marked by a
+    # Key_Dead_* qtcode AND special (offset+10) == 1; composition with the next
+    # keystroke is keyed off the dead-key TYPE the handler recognises.
     DEAD_KEY_QT_MIN = 0x01001250
     DEAD_KEY_QT_MAX = 0x01001263
+
+    def patch_level(offset, new_uni, new_qt):
+        """Patch one keymap entry. Sets a dead key when the target qtcode is a
+        Key_Dead_* code (so the firmware composes it), clears the dead marker
+        when turning a stock dead key into a normal one, and otherwise leaves
+        the qtcode untouched so Ctrl shortcuts keep working."""
+        struct.pack_into('<H', patched, offset + 2, new_uni)
+        old_qt = struct.unpack_from('<I', patched, offset + 4)[0]
+        target_dead = DEAD_KEY_QT_MIN <= new_qt <= DEAD_KEY_QT_MAX
+        old_dead = DEAD_KEY_QT_MIN <= old_qt <= DEAD_KEY_QT_MAX
+        if target_dead:
+            struct.pack_into('<I', patched, offset + 4, new_qt)
+            struct.pack_into('<H', patched, offset + 10, 1)
+        elif old_dead:
+            struct.pack_into('<I', patched, offset + 4, new_qt)
+            struct.pack_into('<H', patched, offset + 10, 0)
 
     for kc, (new_plain, new_shift, plain_qt, shift_qt) in targets.items():
         entries = entries_by_kc.get(kc, [])
@@ -95,24 +113,10 @@ def _patch_binary(data, layout_key):
         # Sort by modifier byte: lowest = plain, next = shift
         entries.sort(key=lambda e: e[1])
 
-        # Patch plain entry
-        offset, mod = entries[0]
-        struct.pack_into('<H', patched, offset + 2, new_plain)
-        # If the existing qtcode is a dead key, replace it and clear special
-        old_qt = struct.unpack_from('<I', patched, offset + 4)[0]
-        if DEAD_KEY_QT_MIN <= old_qt <= DEAD_KEY_QT_MAX:
-            struct.pack_into('<I', patched, offset + 4, plain_qt)
-            struct.pack_into('<H', patched, offset + 10, 0)
+        patch_level(entries[0][0], new_plain, plain_qt)
         patch_count += 1
-
-        # Patch shift entry
         if len(entries) >= 2:
-            offset, mod = entries[1]
-            struct.pack_into('<H', patched, offset + 2, new_shift)
-            old_qt = struct.unpack_from('<I', patched, offset + 4)[0]
-            if DEAD_KEY_QT_MIN <= old_qt <= DEAD_KEY_QT_MAX:
-                struct.pack_into('<I', patched, offset + 4, shift_qt)
-                struct.pack_into('<H', patched, offset + 10, 0)
+            patch_level(entries[1][0], new_shift, shift_qt)
             patch_count += 1
 
     log.info("Patched %d entries for layout '%s'", patch_count, layout_key)
