@@ -65,9 +65,11 @@ The service and script are installed to persistent storage on the Move, so they 
 
 ## Keyboard Language
 
-MoveWriter supports 24 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move. The Move's UI will briefly restart for the new layout to take effect, then your keyboard works in the new language. The setting persists across reboots.
+MoveWriter supports 25 keyboard languages. Select your language from the dropdown in the app, and it will be applied to the Move. The Move's UI will briefly restart for the new layout to take effect, then your keyboard works in the new language. The setting persists across reboots.
 
-Supported languages: US English, UK English, German, French, Spanish, Italian, Portuguese, Brazilian, Dutch, Swedish, Norwegian, Danish, Finnish, Icelandic, Swiss German, Swiss French, Belgian, Russian, Ukrainian, Czech, Hungarian, Turkish, Greek, Hebrew.
+Supported languages: US English, UK English, Belgian, Brazilian, Canadian French, Czech, Danish, Dutch, Finnish, French, German, Greek, Hebrew, Hungarian, Icelandic, Italian, Norwegian, Portuguese, Russian, Spanish, Swedish, Swiss French, Swiss German, Turkish, and Ukrainian.
+
+On the newest MoveOS versions, MoveWriter selects the tablet's built-in keyboard layouts, so your language keeps working across MoveOS updates. If a MoveOS update switched your keyboard to US layout, update MoveWriter and pick your language once — it sticks from then on.
 
 ## Native App (Experimental)
 
@@ -79,7 +81,7 @@ The optional **Install on Move** button (in the *Native App (Experimental)* sect
 
 Open it from the Move's hamburger menu (☰) → AppLoad → MoveWriter.
 
-**Tested on Move OS 3.26.** The native app relies on community-maintained tools (XOVI and AppLoad) that are firmware-specific. To avoid breaking the install, **disable automatic updates** in your Move's settings. If a Move OS update happens, just uninstall the Native App from the desktop, update, and reinstall.
+**Firmware support matters here.** The native app relies on community-maintained tools (XOVI and AppLoad) that are firmware-specific, and the newest MoveOS releases are not supported by those tools yet — the install button will tell you if your firmware isn't supported, and the tablet keeps running stock software. On a supported firmware, disable automatic updates in your Move's settings; if a Move OS update happens, just uninstall the Native App from the desktop, update, and reinstall.
 
 What gets installed under the hood:
 - XOVI extension framework + AppLoad (via [Vellum](https://github.com/vellum-dev/vellum-cli))

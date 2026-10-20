@@ -25,29 +25,29 @@ log = logging.getLogger(__name__)
 KEYBOARD_LAYOUTS = [
     ("US English", "us"),
     ("UK English", "uk"),
-    ("German", "de"),
-    ("French", "fr"),
-    ("Canadian French", "fr_ca"),
-    ("Spanish", "es"),
-    ("Italian", "it"),
-    ("Portuguese", "pt"),
-    ("Brazilian", "br"),
-    ("Dutch", "nl"),
-    ("Swedish", "sv"),
-    ("Norwegian", "no"),
-    ("Danish", "dk"),
-    ("Finnish", "fi"),
-    ("Icelandic", "is"),
-    ("Swiss German", "de_ch"),
-    ("Swiss French", "fr_ch"),
     ("Belgian", "be"),
-    ("Russian", "ru"),
-    ("Ukrainian", "ua"),
+    ("Brazilian", "br"),
+    ("Canadian French", "fr_ca"),
     ("Czech", "cz"),
-    ("Hungarian", "hu"),
-    ("Turkish", "tr"),
+    ("Danish", "dk"),
+    ("Dutch", "nl"),
+    ("Finnish", "fi"),
+    ("French", "fr"),
+    ("German", "de"),
     ("Greek", "gr"),
     ("Hebrew", "he"),
+    ("Hungarian", "hu"),
+    ("Icelandic", "is"),
+    ("Italian", "it"),
+    ("Norwegian", "no"),
+    ("Portuguese", "pt"),
+    ("Russian", "ru"),
+    ("Spanish", "es"),
+    ("Swedish", "sv"),
+    ("Swiss French", "fr_ch"),
+    ("Swiss German", "de_ch"),
+    ("Turkish", "tr"),
+    ("Ukrainian", "ua"),
 ]
 
 LAYOUT_MAP = dict(KEYBOARD_LAYOUTS)
@@ -289,20 +289,9 @@ class Backend:
         self.cfg["keyboard_layout"] = display_name
         config.save(self.cfg)
 
-        # Schedule xochitl restart 3s out — decoupled from our process via
-        # systemd-run so our response gets back to the UI first, and the
-        # restart survives our backend exiting.
-        try:
-            subprocess.Popen(
-                [
-                    "systemd-run", "--on-active=3s", "--collect",
-                    "/bin/systemctl", "restart", "xochitl",
-                ],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except Exception as e:
-            log.error("Failed to schedule xochitl restart: %s", e)
+        # apply_layout schedules a detached job that stops xochitl, writes
+        # the InputLocale setting after the exit flush, and starts xochitl
+        # again — no extra restart needed here (it would race that job).
 
         return {
             "layout": display_name,

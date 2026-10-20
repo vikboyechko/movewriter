@@ -63,6 +63,10 @@ def uninstall(ssh):
     ssh.exec(f"systemctl stop {SERVICE_NAME}", timeout=10)
     ssh.exec(f"systemctl disable {SERVICE_NAME}", timeout=5)
 
+    # Release the wake lock the service may still be holding, so the Move
+    # can sleep again
+    ssh.exec("echo user.lock > /sys/power/wake_unlock", timeout=5)
+
     # Remove from persistent root filesystem
     ssh.exec("mount -o remount,rw /")
     try:

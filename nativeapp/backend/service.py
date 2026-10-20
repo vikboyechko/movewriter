@@ -86,6 +86,10 @@ def uninstall():
     _run(f"systemctl stop {SERVICE_NAME}", timeout=10)
     _run(f"systemctl disable {SERVICE_NAME}", timeout=5)
 
+    # Release the wake lock the service may still be holding, so the Move
+    # can sleep again
+    _run("echo user.lock > /sys/power/wake_unlock", timeout=5)
+
     # Remove from persistent root filesystem
     _run("mount -o remount,rw /", timeout=10)
     try:
@@ -110,7 +114,19 @@ def uninstall():
     # disabling the service shouldn't forget the paired keyboard — re-enabling
     # restores it (the bond in /var/lib/bluetooth persists regardless). Use the
     # explicit unpair flow (clear_keyboard_mac) to actually forget a keyboard.
-    shutil.rmtree(SCRIPT_DIR, ignore_errors=True)
+    # Also keep apply-locale.sh: restore_original() above may have scheduled a
+    # detached conf-clear job that runs a few seconds from now and still needs
+    # it. The file is overwritten on each use.
+    for entry in Path(SCRIPT_DIR).iterdir():
+        if entry.name == "apply-locale.sh":
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            try:
+                os.remove(entry)
+            except FileNotFoundError:
+                pass
 
     _run("systemctl daemon-reload", timeout=5)
 

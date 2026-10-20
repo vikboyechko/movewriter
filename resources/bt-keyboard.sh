@@ -37,11 +37,33 @@ for i in 1 2 3 4 5 6; do
 done
 
 # Make the adapter pairable — default on Move 3.26 is "Pairable: no"
-# which makes outgoing pair requests time out silently.
-bluetoothctl pairable on 2>/dev/null
+# which silently fails outgoing pair requests. Retried like power on,
+# and re-asserted on every connect attempt below: the setting was seen
+# to revert on the new firmware, and a silent reset breaks pairing.
+for i in 1 2 3; do
+    bluetoothctl pairable on 2>/dev/null && break
+    sleep 2
+done
 
-# Set wake lock to prevent sleep during keyboard use
-echo user.lock >> /sys/power/wake_lock
+# ── Wake lock ──────────────────────────────────────────────
+# Hold a wake lock while the keyboard is connected, plus a grace period
+# after it disconnects — so a keyboard that powers down on idle (e.g.
+# Keychron ~10 min) can wake the Move again by reconnecting while the
+# user is still working. After the grace period the lock is released and
+# the Move sleeps normally. A permanent lock (the old behaviour) drained
+# the battery and blocked suspend forever; unlocking a lock that is not
+# held is a harmless no-op.
+GRACE_CYCLES=90    # 90 x RECONNECT_INTERVAL = 15 min
+IDLE=0
+
+update_wake_lock() {
+    # $1 = 0 when the keyboard is connected, non-zero when not
+    if [ "$1" -eq 0 ] || [ "$IDLE" -lt "$GRACE_CYCLES" ]; then
+        echo user.lock > /sys/power/wake_lock 2>/dev/null
+    else
+        echo user.lock > /sys/power/wake_unlock 2>/dev/null
+    fi
+}
 
 # ── Keyboard connect ──────────────────────────────────────
 
@@ -87,6 +109,10 @@ ensure_connected() {
     MAC="$1"
     is_connected "$MAC" && return 0
 
+    # Re-assert pairable — it has been observed to revert on the new
+    # firmware, and outgoing pair/connect fails silently without it.
+    bluetoothctl pairable on >/dev/null 2>&1
+
     bluetoothctl trust "$MAC" >/dev/null 2>&1
 
     if ! is_paired "$MAC"; then
@@ -111,16 +137,32 @@ if [ -f "$MAC_FILE" ]; then
         ensure_connected "$MAC"
         sleep 3
     done
+    # Boot grace: hold the lock from boot even if the keyboard is not up
+    # yet, so an early reconnect (or first connection) is not disturbed.
+    IDLE=0
+    update_wake_lock 1
 fi
 
 # ── Monitor loop ──────────────────────────────────────────
 # Reconnect if the link drops. ensure_connected is a no-op while connected, so
-# this never disturbs a working keyboard.
+# this never disturbs a working keyboard. The wake lock follows the link with
+# a grace period, and is released when no keyboard is configured (e.g. after
+# an unpair) — otherwise it would stay held until reboot.
 
 while true; do
     sleep "$RECONNECT_INTERVAL"
     if [ -f "$MAC_FILE" ]; then
         MAC=$(cat "$MAC_FILE")
         ensure_connected "$MAC"
+        if is_connected "$MAC"; then
+            IDLE=0
+            update_wake_lock 0
+        else
+            IDLE=$((IDLE + 1))
+            update_wake_lock 1
+        fi
+    else
+        IDLE=$GRACE_CYCLES
+        update_wake_lock 1
     fi
 done
